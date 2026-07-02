@@ -1,0 +1,58 @@
+import { Link, Route, Routes } from "react-router-dom";
+import FactoryStatusBar from "./components/FactoryStatusBar";
+import { useFactoryIdentity } from "./context/FactoryIdentityContext";
+import ArticlesPage from "./pages/ArticlesPage";
+import ArticleDetailPage from "./pages/ArticleDetailPage";
+import DashboardPage from "./pages/DashboardPage";
+import FlowCreatePage from "./pages/FlowCreatePage";
+import FlowEditorPage from "./pages/FlowEditorPage";
+import FlowPerformancePage from "./pages/FlowPerformancePage";
+import FlowsPage from "./pages/FlowsPage";
+import PersonasPage from "./pages/PersonasPage";
+import StartFlowsPage from "./pages/StartFlowsPage";
+import PromptsPage from "./pages/PromptsPage";
+import QueuePage from "./pages/QueuePage";
+import RunDetailPage from "./pages/RunDetailPage";
+import SettingsPage from "./pages/SettingsPage";
+import StatsPage from "./pages/StatsPage";
+
+export default function App() {
+  const { factoryName } = useFactoryIdentity();
+
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <h1>{factoryName}</h1>
+        <nav>
+          <Link to="/">Home</Link>
+          <Link to="/queue">Active</Link>
+          <Link to="/start-flows">Start flows</Link>
+          <Link to="/flows">Flow library</Link>
+          <Link to="/personas">Personas</Link>
+          <Link to="/articles">Artifacts</Link>
+          <Link to="/stats">Stats</Link>
+          <Link to="/settings">Settings</Link>
+        </nav>
+      </header>
+      <FactoryStatusBar />
+      <main className="app-main">
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/queue" element={<QueuePage />} />
+          <Route path="/start-flows" element={<StartFlowsPage />} />
+          <Route path="/articles" element={<ArticlesPage />} />
+          <Route path="/articles/:runId" element={<ArticleDetailPage />} />
+          <Route path="/stats" element={<StatsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/flows" element={<FlowsPage />} />
+          <Route path="/flows/new" element={<FlowCreatePage />} />
+          <Route path="/flows/edit" element={<FlowEditorPage />} />
+          <Route path="/flows/performance" element={<FlowPerformancePage />} />
+          <Route path="/personas" element={<PersonasPage />} />
+          <Route path="/prompts/:topicSlug" element={<PromptsPage />} />
+          <Route path="/runs/:runId" element={<RunDetailPage />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
