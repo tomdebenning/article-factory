@@ -52,3 +52,30 @@ def test_unique_tool_labels() -> None:
         {"step_key": "editor", "tools": ["Write file"]},
     ]
     assert unique_tool_labels(summary) == ["Write file", "Web search"]
+
+
+def test_summarize_tool_detail_variants() -> None:
+    assert summarize_tool_detail("web_search", {"query": "news"}) == '"news"'
+    assert summarize_tool_detail("web_fetch", {"url": "https://example.com"}) == "https://example.com"
+    assert summarize_tool_detail("read_file", {"path": "notes.md"}) == "notes.md"
+    assert summarize_tool_detail("list_files", {"path": "drafts"}) == "drafts"
+    assert summarize_tool_detail("custom_tool", {"value": "payload"}) == "payload"
+    assert summarize_tool_detail("custom_tool", {}) == ""
+
+
+def test_aggregate_tool_use_skips_invalid_entries() -> None:
+    steps = [
+        {
+            "step_key": "writer",
+            "tools_used": ["bad", {"tool": "write_file"}, {"tool": "write_file"}],
+        }
+    ]
+    summary = aggregate_tool_use_by_step(steps)
+    assert summary[0]["tools"] == ["Write file"]
+
+
+def test_flatten_tool_labels() -> None:
+    from article_factory.services.tool_usage import flatten_tool_labels
+
+    summary = [{"step_key": "writer", "step_name": "Writer", "tools": ["Web search"]}]
+    assert flatten_tool_labels(summary) == ["Web search (Writer)"]

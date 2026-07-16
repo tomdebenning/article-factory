@@ -99,6 +99,8 @@ def serialize_active_run(db: Session, run: FactoryRun) -> dict[str, Any]:
                 "status": step["status"],
                 "progress": step.get("progress") or {},
                 "tools_used": step.get("tools_used") or [],
+                "puller": step.get("puller") or "",
+                "model": step.get("model") or "",
             }
             for step in step_executions_payload(db, run.run_id)
         ]

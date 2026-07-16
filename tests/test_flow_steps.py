@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from article_factory.services.flow_schema import new_flow_definition
-from article_factory.services.flow_steps import flow_steps_payload, heartbeat_agents
+from article_factory.services.flow_steps import flow_steps_payload, heartbeat_agents, step_display_name
 from article_factory.services.flow_storage import write_flow
 
 
@@ -27,6 +27,29 @@ def test_flow_steps_payload_standard_four_step(configured_db) -> None:
         "source_finder",
         "review",
     ]
+
+
+def test_flow_steps_payload_empty_and_missing_flow() -> None:
+    assert flow_steps_payload("") == []
+    assert flow_steps_payload("does/not/exist.flow.json") == []
+
+
+def test_heartbeat_agents_legacy_fallback(configured_db) -> None:
+    from article_factory.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        agents = heartbeat_agents(db, None)
+        assert agents[0]["step_key"] == "writer"
+        assert agents[0]["display_name"] == "Writer"
+    finally:
+        db.close()
+
+
+def test_step_display_name_paths(configured_db) -> None:
+    assert step_display_name("sports/standard-4-step.flow.json", "writer") == "Writer"
+    assert step_display_name(None, "writer") == "Writer"
+    assert step_display_name(None, "custom_step") == "custom step"
 
 
 def test_heartbeat_agents_use_active_run_flow(configured_db) -> None:

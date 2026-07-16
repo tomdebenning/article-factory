@@ -58,7 +58,6 @@ def save_pipeline_state(
         "fact_check": step_outputs.get("fact_asserter", ""),
     }
     run.review_round = iteration
-    db.refresh(run)
     if run.status != "running":
         return
     commit_with_retry(db)

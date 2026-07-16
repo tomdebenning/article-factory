@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import AsyncMock
 
 from article_factory.services.puller_selection import (
     is_idle_puller,
@@ -104,3 +105,76 @@ async def test_select_puller_for_model_integration() -> None:
         ]
     )
     assert await select_puller_for_model(cp, "llama3") == "gpu-01"
+
+
+def test_pick_puller_falls_back_to_active_busy() -> None:
+    pullers = [
+        {
+            "puller_name": "busy-gpu",
+            "is_active": True,
+            "is_stale": False,
+            "status": "busy",
+            "supported_models": ["llama3"],
+        },
+        {
+            "puller_name": "offline-gpu",
+            "is_active": True,
+            "is_stale": False,
+            "status": "offline",
+            "supported_models": ["llama3"],
+        },
+    ]
+    assert pick_puller(pullers, "llama3") == "busy-gpu"
+
+
+def test_pick_puller_no_match_raises() -> None:
+    with pytest.raises(RuntimeError, match="No idle puller"):
+        pick_puller(
+            [{"puller_name": "p", "is_active": False, "supported_models": ["x"]}],
+            "llama3",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_registered_puller_empty_name() -> None:
+    from article_factory.control_plane.client import ControlPlaneClient
+    from article_factory.services.puller_selection import get_registered_puller_on_cp
+
+    cp = AsyncMock(spec=ControlPlaneClient)
+    assert await get_registered_puller_on_cp(cp, "  ") is None
+
+
+@pytest.mark.asyncio
+async def test_get_registered_puller_fallback_list() -> None:
+    from article_factory.control_plane.client import ControlPlaneClient
+    from article_factory.services.puller_selection import (
+        get_registered_puller_on_cp,
+        puller_is_registered_on_cp,
+    )
+
+    cp = AsyncMock(spec=ControlPlaneClient)
+    cp.get_puller = AsyncMock(side_effect=RuntimeError("down"))
+    cp.list_pullers = AsyncMock(
+        return_value=[
+            {
+                "puller_name": "gpu-02",
+                "is_active": True,
+                "is_stale": False,
+                "status": "busy",
+            }
+        ]
+    )
+    row = await get_registered_puller_on_cp(cp, "gpu-02")
+    assert row is not None
+    assert await puller_is_registered_on_cp(cp, "gpu-02") is True
+
+
+@pytest.mark.asyncio
+async def test_get_registered_puller_list_fails() -> None:
+    from article_factory.control_plane.client import ControlPlaneClient
+    from article_factory.services.puller_selection import get_registered_puller_on_cp
+
+    cp = AsyncMock(spec=ControlPlaneClient)
+    cp.get_puller = AsyncMock(side_effect=RuntimeError("down"))
+    cp.list_pullers = AsyncMock(side_effect=RuntimeError("down"))
+    assert await get_registered_puller_on_cp(cp, "gpu-02") is None

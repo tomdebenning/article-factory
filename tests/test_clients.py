@@ -117,14 +117,33 @@ async def test_control_plane_list_pullers_and_activity() -> None:
     unavailable_response = MagicMock()
     unavailable_response.status_code = 503
 
+    fetched_status_response = MagicMock()
+    fetched_status_response.status_code = 200
+    fetched_status_response.raise_for_status = MagicMock()
+    fetched_status_response.json.return_value = {
+        "found": True,
+        "status": "fetched",
+    }
+
+    missing_status_response = MagicMock()
+    missing_status_response.status_code = 200
+    missing_status_response.raise_for_status = MagicMock()
+    missing_status_response.json.return_value = {"found": False}
+
+    missing_activity_response = MagicMock()
+    missing_activity_response.status_code = 200
+    missing_activity_response.raise_for_status = MagicMock()
+    missing_activity_response.json.return_value = {"events": []}
+
     mock_http = AsyncMock()
     mock_http.get = AsyncMock(
         side_effect=[
             pullers_response,
             activity_response,
             unavailable_response,
-            activity_response,
-            activity_response,
+            fetched_status_response,
+            missing_status_response,
+            missing_activity_response,
         ]
     )
     mock_http.__aenter__ = AsyncMock(return_value=mock_http)
@@ -142,3 +161,53 @@ async def test_control_plane_list_pullers_and_activity() -> None:
 
         assert await client.task_was_fetched(conversation_id="conv-abc") is True
         assert await client.task_was_fetched(conversation_id="missing") is False
+
+
+@pytest.mark.asyncio
+async def test_control_plane_get_puller_and_task_status() -> None:
+    client = ControlPlaneClient(base_url="http://cp.test")
+
+    puller_response = MagicMock()
+    puller_response.status_code = 200
+    puller_response.raise_for_status = MagicMock()
+    puller_response.json.return_value = {"puller_name": "gpu-01"}
+
+    missing_puller = MagicMock()
+    missing_puller.status_code = 404
+
+    server_error = MagicMock()
+    server_error.status_code = 503
+
+    not_found_status = MagicMock()
+    not_found_status.status_code = 404
+
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(
+        side_effect=[puller_response, missing_puller, server_error, not_found_status]
+    )
+    mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+    mock_http.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("article_factory.control_plane.client.httpx.AsyncClient", return_value=mock_http):
+        puller = await client.get_puller("gpu-01")
+        assert puller["puller_name"] == "gpu-01"
+        assert await client.get_puller("missing") is None
+        assert await client.get_task_status("conv-x") is None
+        assert await client.get_task_status("conv-y") is None
+
+
+@pytest.mark.asyncio
+async def test_control_plane_heartbeats() -> None:
+    client = ControlPlaneClient(base_url="http://cp.test")
+    ok_response = MagicMock()
+    ok_response.raise_for_status = MagicMock()
+
+    mock_http = AsyncMock()
+    mock_http.post = AsyncMock(return_value=ok_response)
+    mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+    mock_http.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("article_factory.control_plane.client.httpx.AsyncClient", return_value=mock_http):
+        await client.post_node_heartbeat({"node": "factory"})
+        await client.post_agent_heartbeat({"agent": "writer"})
+    assert mock_http.post.await_count == 2

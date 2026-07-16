@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from article_factory.services.flow_tool_requirements import collect_flow_tool_requirements
+from article_factory.services.flow_tool_requirements import (
+    collect_flow_tool_requirements,
+    flow_dict_tool_requirements,
+)
 from article_factory.services.step_tools import (
     StepToolRegistry,
     all_step_tools_enabled,
@@ -118,6 +121,10 @@ def test_collect_flow_tool_requirements() -> None:
     assert reqs["needs_web_search"] is True
     assert reqs["needs_write_file"] is True
     assert reqs["needs_web_fetch"] is True
+
+
+def test_flow_dict_tool_requirements() -> None:
+    assert flow_dict_tool_requirements({}) == collect_flow_tool_requirements()
 
 
 def test_run_workspace_root_creates_directory(tmp_path: Path, monkeypatch) -> None:
