@@ -183,19 +183,19 @@ async def test_stop_run_marks_cancelled(client, api_headers, configured_db) -> N
 
     db = SessionLocal()
     try:
-        db.add(FactoryRun(run_id="run-stop", topic_slug="sports", status="running", current_step="writer"))
+        db.add(FactoryRun(run_id="run-stop-switch", topic_slug="sports", status="running", current_step="writer"))
         db.commit()
     finally:
         db.close()
 
-    response = client.post("/api/runs/run-stop/stop", headers=api_headers)
+    response = client.post("/api/runs/run-stop-switch/stop", headers=api_headers)
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["run"]["status"] == "cancelled"
 
     db = SessionLocal()
     try:
-        run = db.query(FactoryRun).filter_by(run_id="run-stop").one()
+        run = db.query(FactoryRun).filter_by(run_id="run-stop-switch").one()
         assert run.status == "cancelled"
     finally:
         db.close()

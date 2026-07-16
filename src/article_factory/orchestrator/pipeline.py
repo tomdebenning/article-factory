@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from article_factory.models import FactoryRun, TopicQueueItem
 from article_factory.services.tool_usage import aggregate_tool_use_by_step
+from article_factory.services.flow_storage import read_flow
 from article_factory.services.iteration_stats import attach_iteration_metadata
 
 
@@ -31,10 +32,16 @@ def build_manifest(run: FactoryRun, steps: list[dict[str, Any]]) -> dict[str, An
         "step_stats": steps,
         "tool_use": aggregate_tool_use_by_step(steps),
     }
+    flow = None
+    try:
+        flow = read_flow(run.flow_path)
+    except Exception:
+        flow = None
     return attach_iteration_metadata(
         manifest,
         draft_number=run.draft_number,
         review_round=run.review_round,
+        flow=flow,
     )
 
 
@@ -53,6 +60,7 @@ async def push_factory_status(
     active_runs: list[FactoryRun] | None = None,
     queue_depth: int,
     topic_slug: str | None = None,
+    system_meta: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "state": state,
@@ -60,6 +68,8 @@ async def push_factory_status(
         "topic_slug": topic_slug,
         "last_heartbeat_at": datetime.now(timezone.utc).isoformat(),
     }
+    if system_meta:
+        payload["system_meta"] = system_meta
     runs = active_runs if active_runs is not None else ([active_run] if active_run else [])
     if db is not None and runs:
         payload["active_runs"] = [serialize_active_run(db, run) for run in runs[:3]]
@@ -97,6 +107,8 @@ def serialize_active_run(db: Session, run: FactoryRun) -> dict[str, Any]:
             {
                 "step_key": step["step_key"],
                 "status": step["status"],
+                "puller": step.get("puller") or "",
+                "model": step.get("model") or "",
                 "progress": step.get("progress") or {},
                 "tools_used": step.get("tools_used") or [],
                 "puller": step.get("puller") or "",

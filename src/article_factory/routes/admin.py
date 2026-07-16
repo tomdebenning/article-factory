@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from article_factory.services.api_keys import is_real_api_key
-from article_factory.services.factory_api_key_cache import get_cached_factory_api_key
+from article_factory.services.api_key_auth import require_configured_api_key
 from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.db import get_db
 from article_factory.models import CompletedArticle, FactoryRun, FlowQueue, StepExecution, TopicQueueItem
@@ -56,7 +55,7 @@ from article_factory.services.run_attachments import (
     list_run_workspace_attachment_summaries,
     read_run_workspace_file,
 )
-from article_factory.services.showroom_publish import publish_article_to_showroom
+from article_factory.services.showroom_flow_publish import publish_flow_batch_to_showroom
 from article_factory.services.step_trace import step_executions_payload
 from article_factory.services.token_usage import enrich_manifest
 
@@ -136,12 +135,27 @@ async def _retry_assessment(db: Session) -> dict:
 
 def require_api_key(
     x_api_key: str | None = Header(default=None),
+    api_key: str | None = Query(default=None, alias="api_key"),
+    factory_api_key: str | None = Cookie(default=None, alias="factory_api_key"),
 ) -> None:
-    configured = get_cached_factory_api_key()
-    if not is_real_api_key(configured):
-        return
-    if x_api_key != configured:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    require_configured_api_key(
+        x_api_key=x_api_key,
+        api_key=api_key,
+        factory_api_key=factory_api_key,
+    )
+
+
+def require_api_key_header_or_query(
+    x_api_key: str | None = Header(default=None),
+    api_key: str | None = Query(default=None, alias="api_key"),
+    factory_api_key: str | None = Cookie(default=None, alias="factory_api_key"),
+) -> None:
+    """Allow API key via header, query string, or cookie for browser file downloads."""
+    require_configured_api_key(
+        x_api_key=x_api_key,
+        api_key=api_key,
+        factory_api_key=factory_api_key,
+    )
 
 
 @router.get("/health")
@@ -324,11 +338,11 @@ async def factory_status(db: Session = Depends(get_db)) -> dict:
             item = db.get(TopicQueueItem, run.queue_item_id)
             if item:
                 active_prompt = item.prompt
-        from article_factory.services.flow_steps import flow_steps_payload
+        from article_factory.services.flow_steps import flow_steps_payload_for_run
 
         summary = RunSummary.model_validate(run).model_dump()
         summary["topic_prompt"] = active_prompt
-        summary["flow_steps"] = flow_steps_payload(run.flow_path or "")
+        summary["flow_steps"] = flow_steps_payload_for_run(db, run)
         summary["steps"] = step_executions_payload(db, run.run_id)
         return summary
 
@@ -610,6 +624,31 @@ def get_article_workspace_file(run_id: str, file_path: str, db: Session = Depend
     return {"run_id": run_id, **payload}
 
 
+@router.post("/runs/{run_id}/recover-accept", dependencies=[Depends(require_api_key)])
+async def recover_missed_accept_run(run_id: str, db: Session = Depends(get_db)) -> dict:
+    from article_factory.cms_client import CmsClient
+    from article_factory.orchestrator.runner import _cms_configured, _complete_run
+    from article_factory.services.run_recovery import build_recovery_from_missed_accept
+
+    run = db.query(FactoryRun).filter_by(run_id=run_id).one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    recovery = build_recovery_from_missed_accept(db, run)
+    if recovery is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Run is not eligible for missed-accept recovery",
+        )
+
+    draft, step_records = recovery
+    runtime = load_runtime_settings(db)
+    cms = CmsClient(base_url=runtime.cms_url, api_key=runtime.cms_api_key) if _cms_configured(runtime) else None
+    await _complete_run(db, run, draft, step_records, cms)
+    db.refresh(run)
+    return {"ok": True, "run": RunSummary.model_validate(run).model_dump()}
+
+
 @router.post("/runs/{run_id}/publish", dependencies=[Depends(require_api_key)])
 async def publish_run_to_showroom(run_id: str, db: Session = Depends(get_db)) -> dict:
     run = db.query(FactoryRun).filter_by(run_id=run_id).one_or_none()
@@ -637,6 +676,17 @@ async def publish_run_to_showroom(run_id: str, db: Session = Depends(get_db)) ->
     return {"ok": True, "result": result, "run": RunSummary.model_validate(run).model_dump()}
 
 
+@router.post("/flow-batches/{snapshot_id}/publish", dependencies=[Depends(require_api_key)])
+async def publish_flow_batch_snapshot(snapshot_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        result = await publish_flow_batch_to_showroom(db, topic_queue_snapshot_id=snapshot_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=409, detail="Flow batch is not complete yet")
+    return {"ok": True, "result": result}
+
+
 @router.get("/runs", dependencies=[Depends(require_api_key)])
 def list_runs(db: Session = Depends(get_db)) -> dict:
     runs = db.query(FactoryRun).order_by(FactoryRun.started_at.desc()).limit(50).all()
@@ -653,10 +703,10 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     run = db.query(FactoryRun).filter_by(run_id=run_id).one_or_none()
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    from article_factory.services.flow_steps import flow_steps_payload
+    from article_factory.services.flow_steps import flow_steps_payload_for_run
 
     run_summary = RunSummary.model_validate(run).model_dump()
-    run_summary["flow_steps"] = flow_steps_payload(run.flow_path or "")
+    run_summary["flow_steps"] = flow_steps_payload_for_run(db, run)
     if run.flow_version_id:
         from article_factory.services.flow_versions import get_flow_version
 

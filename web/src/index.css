@@ -1278,6 +1278,10 @@ select { cursor: pointer; }
   flex-direction: column;
   gap: 0.65rem;
 }
+.active-group-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 
 .active-day-count {
   margin-left: auto;
@@ -1596,4 +1600,221 @@ select { cursor: pointer; }
   padding-left: 1.1rem;
   color: var(--color-muted);
   font-size: 0.88rem;
+}
+
+.flow-batch-page h2,
+.flow-batch-list h3,
+.flow-batch-errors h3,
+.flow-batch-topics h3 {
+  margin-top: 1.25rem;
+}
+.flow-batch-table td {
+  vertical-align: top;
+}
+.flow-batch-tag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 180px;
+}
+.flow-batch-tag-editor select,
+.flow-batch-tag-editor input {
+  width: 100%;
+}
+
+.flow-performance-kpi-primary {
+  border-color: #388bfd;
+  background: rgba(56, 139, 253, 0.08);
+}
+.flow-outcome-chart {
+  margin-top: 1.5rem;
+}
+.flow-outcome-chart h3 {
+  margin: 0 0 0.35rem;
+}
+.flow-outcome-chart-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+.flow-outcome-chart-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 28%) 1fr minmax(72px, auto);
+  gap: 0.65rem;
+  align-items: center;
+}
+.flow-outcome-chart-label {
+  font-size: 0.88rem;
+}
+.flow-outcome-chart-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  height: 1.35rem;
+  overflow: hidden;
+}
+.flow-outcome-chart-fill {
+  height: 100%;
+  border-radius: 4px;
+  min-width: 4px;
+  transition: width 0.2s ease;
+}
+.flow-outcome-chart-count {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.flow-turn-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+.flow-turn-chart h3 {
+  margin: 0 0 0.35rem;
+}
+.flow-turn-chart-columns {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  min-height: 180px;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+}
+.flow-turn-chart-column {
+  flex: 1;
+  min-width: 52px;
+  max-width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.flow-turn-chart-bar-track {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px 4px 0 0;
+}
+.flow-turn-chart-bar-fill {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+  transition: height 0.2s ease;
+}
+.flow-turn-chart-value {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.flow-turn-chart-label {
+  font-size: 0.82rem;
+  text-align: center;
+}
+.flow-turn-chart-share {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+.modal-panel {
+  width: min(520px, 100%);
+  background: var(--color-panel, #161b22);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.flow-prompt-improvement-panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+.flow-prompt-improvement-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.flow-prompt-improvement-jobs {
+  margin-top: 1rem;
+}
+.flow-prompt-improvement-job {
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.flow-prompt-improvement-banner {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #388bfd;
+  background: rgba(56, 139, 253, 0.1);
+}
+.flow-improvement-report-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(56, 139, 253, 0.45);
+  border-radius: 8px;
+  background: rgba(56, 139, 253, 0.06);
+}
+.flow-improvement-report-block {
+  margin-top: 1rem;
+}
+.flow-improvement-report-block > strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.flow-improvement-report-markdown h5,
+.flow-improvement-report-markdown h6 {
+  margin: 0.75rem 0 0.35rem;
+}
+.flow-improvement-report-markdown p {
+  margin: 0.35rem 0;
+  line-height: 1.5;
+}
+.flow-improvement-change-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.flow-improvement-change-card {
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.flow-improvement-change-card header {
+  margin-bottom: 0.35rem;
+}
+.flow-improvement-change-card p {
+  margin: 0.35rem 0;
+}
+.flow-improvement-action-list li {
+  margin-bottom: 0.5rem;
+}
+.flow-improvement-evidence summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.flow-improvement-report-panel pre {
+  white-space: pre-wrap;
+  word-break: break-word;
 }

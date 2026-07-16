@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     step_poll_interval_seconds: float = 1.5
     step_no_puller_timeout_seconds: float = 180.0
     step_no_puller_max_attempts: int = 3
+    step_empty_response_max_attempts: int = 3
     step_response_timeout_seconds: float = 900.0
     step_busy_puller_max_wait_seconds: float = 3600.0
     step_puller_alive_check_interval_seconds: float = 10.0
@@ -32,6 +33,8 @@ class Settings(BaseSettings):
     flow_run_outputs_root: str = "./data/runs"
     brave_search_api_key: str = ""
     cors_origins: str = "*"
+    trust_proxy_headers: bool = False
+    telemetry_csv_iteration_columns: int = 11
 
     @property
     def cors_origin_list(self) -> list[str]:

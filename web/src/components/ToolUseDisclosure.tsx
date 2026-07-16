@@ -12,7 +12,7 @@ export default function ToolUseDisclosure({
   }
 
   return (
-    <details className="tool-use-disclosure" open={live || undefined}>
+    <details className="tool-use-disclosure" open={live || tools.length > 0 || undefined}>
       <summary>{live ? `Tool use in progress (${tools.length})` : `Tool use (${tools.length})`}</summary>
       <ul className="tool-use-list">
         {tools.map((entry, index) => (

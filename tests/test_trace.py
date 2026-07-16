@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock, patch
 from article_factory.models import FactoryRun, StepExecution
 from article_factory.services.step_trace import (
     StepTracer,
+    batch_step_executions_payload,
+    duration_ms_between,
     enrich_steps_with_responses,
     list_step_executions,
     step_execution_to_dict,
+    step_executions_payload,
 )
 
 
@@ -191,5 +194,88 @@ def test_enrich_steps_with_responses_from_pipeline_state(configured_db) -> None:
             [step_execution_to_dict(db.query(StepExecution).one())],
         )
         assert steps[0]["response_content"] == "Recovered draft"
+    finally:
+        db.close()
+
+
+def test_duration_ms_between() -> None:
+    from datetime import datetime, timezone
+
+    start = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 1, 1, 12, 0, 2, tzinfo=timezone.utc)
+    assert duration_ms_between(start, end) == 2000
+    assert duration_ms_between(None, end) is None
+
+
+def test_step_tracer_record_task_status(configured_db) -> None:
+    import article_factory.db as db_module
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(FactoryRun(run_id="run-task-status", topic_slug="sports", status="running"))
+        db.commit()
+        tracer = StepTracer(db, run_id="run-task-status", step_key="writer", puller="p1", model="m1")
+        tracer.record_task_status(
+            {
+                "status": "queued",
+                "queue_depth_at_submit": 3,
+                "target_puller": "gpu-01",
+            }
+        )
+        assert tracer.execution.progress["activity"] == "Queued on puller (depth 3)"
+        tracer.record_task_status({"status": "fetched", "fetched_by": "gpu-01"})
+        assert "Fetched by gpu-01" in tracer.execution.progress["activity"]
+        tracer.record_task_status({"status": "failed", "response_error": "timeout", "response_error_kind": "timeout"})
+        assert "timeout" in tracer.execution.progress["activity"]
+        tracer.record_activity("Custom activity", cp_round=4)
+        assert tracer.execution.progress["cp_round"] == 4
+    finally:
+        db.close()
+
+
+def test_enrich_steps_by_step_key(configured_db) -> None:
+    import article_factory.db as db_module
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(
+            FactoryRun(
+                run_id="run-by-key",
+                topic_slug="sports",
+                status="running",
+                pipeline_state={
+                    "step_records": [
+                        {"step_key": "writer", "content": "first writer"},
+                        {"step_key": "writer", "content": "second writer"},
+                    ]
+                },
+            )
+        )
+        db.add(StepExecution(run_id="run-by-key", step_key="writer", status="completed"))
+        db.add(StepExecution(run_id="run-by-key", step_key="writer", status="completed"))
+        db.commit()
+        steps = [
+            step_execution_to_dict(row)
+            for row in db.query(StepExecution).filter_by(run_id="run-by-key").order_by(StepExecution.id).all()
+        ]
+        enriched = enrich_steps_with_responses(db, "run-by-key", steps)
+        assert enriched[0]["response_content"] == "first writer"
+        assert enriched[1]["response_content"] == "second writer"
+    finally:
+        db.close()
+
+
+def test_batch_and_payload_helpers(configured_db) -> None:
+    import article_factory.db as db_module
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(FactoryRun(run_id="run-batch", topic_slug="sports", status="running"))
+        db.add(StepExecution(run_id="run-batch", step_key="writer", status="completed", response_content="done"))
+        db.commit()
+        assert step_executions_payload(db, "run-batch")[0]["response_content"] == "done"
+        grouped = batch_step_executions_payload(db, ["run-batch", "missing"])
+        assert "run-batch" in grouped
+        assert batch_step_executions_payload(db, []) == {}
     finally:
         db.close()

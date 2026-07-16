@@ -7,12 +7,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from article_factory.cms_client import CmsClient
+from article_factory.cms_client import CmsClient, best_effort_showroom
 from article_factory.config import settings
 from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.models import (
     CompletedArticle,
     FactoryRun,
+    FlowQueue,
     TopicQueueItem,
 )
 from article_factory.orchestrator.flow_runner import (
@@ -50,12 +51,15 @@ from article_factory.services.run_recovery import (
     commit_with_retry,
     ensure_run_pipeline_state,
     fail_interrupted_run,
+    latest_step_execution,
     reconcile_orphaned_runs,
 )
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
-from article_factory.services.flow_versions import ensure_flow_version_for_run
+from article_factory.services.flow_versions import resolve_flow_for_run, resolve_flow_version_for_run
 from article_factory.services.topic_queue_snapshots import get_or_create_topic_queue_snapshot
 from article_factory.services.flow_performance import apply_run_performance
+from article_factory.services.showroom_flow_publish import maybe_publish_flow_batch_after_run
+from article_factory.services.telemetry import capture_run_telemetry_safe
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +123,10 @@ async def _emit_run_event(
     }
     if step_key:
         payload["step_key"] = step_key
-    await cms.post_run_event(payload)
+    await best_effort_showroom(
+        f"run event {event} for {run_id}",
+        lambda: cms.post_run_event(payload),
+    )
 
 
 async def _complete_run(
@@ -136,6 +143,8 @@ async def _complete_run(
         run.pipeline_state = None
         _mark_queue_item(db, run, "failed")
         db.commit()
+        capture_run_telemetry_safe(db, run.run_id)
+        await maybe_publish_flow_batch_after_run(db, run, cms=cms)
         return
 
     title_line = headline_from_markdown(draft)
@@ -170,6 +179,7 @@ async def _complete_run(
     )
     _mark_queue_item(db, run, "completed")
     db.commit()
+    capture_run_telemetry_safe(db, run.run_id)
 
     if cms is not None:
         article = db.query(CompletedArticle).filter_by(run_id=run.run_id).one()
@@ -185,6 +195,7 @@ async def _complete_run(
     elif _cms_configured(load_runtime_settings(db)):
         run.error = "Showroom publish skipped: CMS client unavailable"
         db.commit()
+    await maybe_publish_flow_batch_after_run(db, run, cms=cms)
 
 
 async def _execute_pipeline(
@@ -214,7 +225,7 @@ async def _execute_pipeline(
     resume_step_id: str | None = None
     if resume_from_step:
         try:
-            flow = read_flow(flow_path)
+            flow = resolve_flow_for_run(db, run)
             steps = sorted_steps(flow)
             if any(step.step_id == resume_from_step for step in steps):
                 resume_step_id = resume_from_step
@@ -240,6 +251,9 @@ async def _execute_pipeline(
             resume_from_step_id=resume_step_id,
         )
         db.refresh(run)
+        if run.status in ("completed", "failed", "cancelled"):
+            capture_run_telemetry_safe(db, run.run_id)
+            await maybe_publish_flow_batch_after_run(db, run, cms=cms)
         if run.status == "failed":
             _mark_queue_item(db, run, "failed")
         return run
@@ -260,6 +274,8 @@ async def _execute_pipeline(
         elif run.queue_item_id:
             _mark_queue_item(db, run, "failed")
         db.commit()
+        capture_run_telemetry_safe(db, run.run_id)
+        await maybe_publish_flow_batch_after_run(db, run, cms=cms)
         await clear_run_cancel(run.run_id)
         return run
     except asyncio.CancelledError:
@@ -295,11 +311,15 @@ async def run_pipeline_for_topic(
     queue_item_id: int | None = None,
     selected_puller: str | None = None,
     flow_path: str | None = None,
+    flow_version_id: int | None = None,
 ) -> FactoryRun:
     resolved_flow = (flow_path or "").strip() or resolve_default_flow_path(db)
     first_step = "writer"
     try:
-        flow = read_flow(resolved_flow)
+        from article_factory.models import FactoryRun as _FactoryRun
+
+        preview_run = _FactoryRun(flow_path=resolved_flow, flow_version_id=flow_version_id)
+        flow = resolve_flow_for_run(db, preview_run)
         steps = sorted_steps(flow)
         if steps:
             first_step = steps[0].step_key
@@ -317,7 +337,11 @@ async def run_pipeline_for_topic(
     if selected_puller:
         run.selected_puller = selected_puller
 
-    version = ensure_flow_version_for_run(db, resolved_flow)
+    version = resolve_flow_version_for_run(
+        db,
+        resolved_flow,
+        flow_version_id=flow_version_id,
+    )
     run.flow_version_id = version.id
     snapshot = get_or_create_topic_queue_snapshot(
         db,
@@ -346,6 +370,11 @@ async def continue_active_run(db: Session, run: FactoryRun) -> bool:
         return True
 
     if not run.pipeline_state and not ensure_run_pipeline_state(db, run):
+        if latest_step_execution(db, run.run_id) is None:
+            topic_prompt = _topic_prompt_for_run(db, run)
+            logger.info("Restarting run %s — pipeline never reached the control plane", run.run_id)
+            await _execute_pipeline(db, run=run, topic_prompt=topic_prompt)
+            return True
         fail_interrupted_run(
             db,
             run,
@@ -357,7 +386,7 @@ async def continue_active_run(db: Session, run: FactoryRun) -> bool:
     resume_step = run.current_step
     if not resume_step:
         try:
-            flow = read_flow(_flow_path_for_run(db, run))
+            flow = resolve_flow_for_run(db, run)
             steps = sorted_steps(flow)
             resume_step = steps[0].step_key if steps else None
         except Exception:
@@ -515,8 +544,6 @@ class FactoryLoop:
                     queue_worker_key = f"queue-{run.queue_item_id}"
                     if queue_worker_key in self._run_workers:
                         continue
-                if not run.pipeline_state and not ensure_run_pipeline_state(db, run):
-                    continue
                 self._spawn_worker(worker_key, self._continue_run(run.run_id))
 
             runtime = load_runtime_settings(db)
@@ -574,12 +601,21 @@ class FactoryLoop:
                 puller_name = str(puller.get("puller_name") or "")
                 if not puller_name:
                     continue
+                queue = db.get(FlowQueue, item.flow_queue_id) if item.flow_queue_id else None
+                queue_flow_version_id = queue.flow_version_id if queue else None
                 item.status = "running"
                 commit_with_retry(db)
                 self._reserved_pullers.add(puller_name)
                 self._spawn_worker(
                     worker_key,
-                    self._run_queue_item(item.id, item.topic_slug, item.prompt, item.flow_path, puller_name),
+                    self._run_queue_item(
+                        item.id,
+                        item.topic_slug,
+                        item.prompt,
+                        item.flow_path,
+                        puller_name,
+                        queue_flow_version_id,
+                    ),
                 )
             if queued_items:
                 schedule_showroom_status_refresh(force=True)
@@ -605,6 +641,7 @@ class FactoryLoop:
         topic_prompt: str,
         flow_path: str,
         puller_name: str,
+        flow_version_id: int | None = None,
     ) -> None:
         from article_factory.db import SessionLocal
 
@@ -618,6 +655,7 @@ class FactoryLoop:
                     queue_item_id=item_id,
                     selected_puller=puller_name,
                     flow_path=flow_path,
+                    flow_version_id=flow_version_id,
                 )
             finally:
                 db.close()

@@ -3,15 +3,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from article_factory.cms_client import CmsClient
 from article_factory.config import settings
+from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.models import FactoryRun, TopicQueueItem
 from article_factory.orchestrator.pipeline import push_factory_status
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
+from article_factory.services.showroom_puller_meta import build_pullers_system_meta
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +39,23 @@ def _active_runs(db: Session) -> list[FactoryRun]:
     )
 
 
+async def _pullers_system_meta(db: Session) -> dict[str, Any] | None:
+    runtime = load_runtime_settings(db)
+    if not runtime.control_plane_url.strip():
+        return None
+    try:
+        cp = ControlPlaneClient(base_url=runtime.control_plane_url)
+        pullers = await cp.list_pullers(active_only=False)
+        return build_pullers_system_meta(pullers)
+    except Exception:
+        logger.debug("Could not fetch pullers for Showroom status sync", exc_info=True)
+        return None
+
+
 async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:
     running = _active_runs(db)
     queue_depth = db.query(TopicQueueItem).filter_by(status="queued").count()
+    system_meta = await _pullers_system_meta(db)
     await push_factory_status(
         cms,
         db=db,
@@ -47,6 +64,7 @@ async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:
         active_runs=running,
         queue_depth=queue_depth,
         topic_slug=running[0].topic_slug if running else None,
+        system_meta=system_meta,
     )
 
 

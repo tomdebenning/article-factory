@@ -92,6 +92,7 @@ def reconstruct_pipeline_state(db: Session, run: FactoryRun) -> dict[str, Any] |
 
     from article_factory.services.flow_paths import resolve_default_flow_path
     from article_factory.services.flow_storage import read_flow
+    from article_factory.services.flow_roles import resolve_flow_roles
     from article_factory.services.verdict import Verdict, extract_feedback_body, parse_verdict
 
     flow_path = (run.flow_path or "").strip() or resolve_default_flow_path(db)
@@ -100,6 +101,9 @@ def reconstruct_pipeline_state(db: Session, run: FactoryRun) -> dict[str, Any] |
     except Exception:
         logger.warning("Cannot reconstruct pipeline state — unreadable flow for %s", run.run_id)
         return None
+
+    roles = resolve_flow_roles(flow)
+    gate_key = roles.gate_step_key
 
     flow_steps = sorted(flow.steps, key=lambda step: step.order)
     key_to_step = {step.step_key: step for step in flow_steps}
@@ -134,19 +138,20 @@ def reconstruct_pipeline_state(db: Session, run: FactoryRun) -> dict[str, Any] |
     feedback = ""
     iteration = 0
     for execution in completed:
-        if execution.step_key != "review" or not execution.response_content:
+        if not gate_key or execution.step_key != gate_key or not execution.response_content:
             continue
         if parse_verdict(execution.response_content) == Verdict.REJECT:
             iteration += 1
             feedback = extract_feedback_body(execution.response_content)
 
+    producer_key = roles.producer_step_keys[0] if roles.producer_step_keys else "writer"
     return {
         "step_outputs": step_outputs,
         "feedback": feedback,
         "step_records": step_records,
         "current_step_id": resume_step.step_id,
         "iteration": iteration,
-        "draft": step_outputs.get("writer", ""),
+        "draft": step_outputs.get(producer_key, step_outputs.get("writer", "")),
     }
 
 
@@ -172,6 +177,57 @@ def ensure_run_pipeline_state(db: Session, run: FactoryRun) -> bool:
         iteration,
     )
     return True
+
+
+def build_recovery_from_missed_accept(
+    db: Session,
+    run: FactoryRun,
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Return draft and step records when a failed run's last review was actually ACCEPT."""
+    if run.status != "failed":
+        return None
+    error = (run.error or "").lower()
+    if "missing verdict" not in error:
+        return None
+
+    from article_factory.services.flow_paths import resolve_default_flow_path
+    from article_factory.services.flow_storage import read_flow
+    from article_factory.services.verdict import Verdict, parse_verdict
+
+    completed = [step for step in list_step_executions(db, run.run_id) if step.status == "completed"]
+    reviews = [step for step in completed if step.step_key == "review" and step.response_content]
+    if not reviews:
+        return None
+    if parse_verdict(reviews[-1].response_content or "") != Verdict.ACCEPT:
+        return None
+
+    writers = [step for step in completed if step.step_key == "writer" and step.response_content]
+    if not writers:
+        return None
+    draft = writers[-1].response_content or ""
+
+    flow_path = (run.flow_path or "").strip() or resolve_default_flow_path(db)
+    try:
+        flow = read_flow(flow_path)
+        key_to_step = {step.step_key: step for step in flow.steps}
+    except Exception:
+        key_to_step = {}
+
+    step_records: list[dict[str, Any]] = []
+    for execution in completed:
+        flow_step = key_to_step.get(execution.step_key)
+        step_records.append(
+            {
+                "step_key": execution.step_key,
+                "step_name": flow_step.label if flow_step else execution.step_key,
+                "content": execution.response_content or "",
+                "duration_ms": execution.duration_ms,
+                "usage": execution.usage or {},
+                "tools_used": execution.tools_used or [],
+                "turns": execution.turns,
+            }
+        )
+    return draft, step_records
 
 
 def fail_interrupted_run(

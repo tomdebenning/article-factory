@@ -12,6 +12,7 @@ from article_factory.models import FactoryRun
 from article_factory.services.flow_paths import resolve_default_flow_path
 from article_factory.services.flow_schema import FlowDefinition, FlowStep, FlowStepCompletion
 from article_factory.services.flow_storage import read_flow, save_step_response_to_disk
+from article_factory.services.flow_versions import resolve_flow_for_run
 from article_factory.services.flow_variables import article_body, build_step_variables
 from article_factory.services.puller_selection import select_puller_for_model
 from article_factory.services.run_control import (
@@ -27,6 +28,8 @@ from article_factory.services.run_control import (
 from article_factory.services.run_recovery import save_pipeline_state
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
 from article_factory.services.step_trace import StepTracer
+from article_factory.services.review_parser import review_json_prompt_instructions
+from article_factory.services.step_tools import is_review_loop_step, resolve_step_tools
 from article_factory.services.verdict import Verdict, extract_feedback_body, parse_verdict
 from article_factory.workers.base import StepContext
 from article_factory.workers.executor import run_step_from_context
@@ -78,7 +81,7 @@ async def execute_flow_pipeline(
     complete_run,
     resume_from_step_id: str | None = None,
 ) -> FactoryRun:
-    flow = read_flow(flow_path)
+    flow = resolve_flow_for_run(db, run)
     steps = sorted_steps(flow)
     cp = ControlPlaneClient(base_url=runtime.control_plane_url)
     run_model = run.selected_model or runtime.default_model
@@ -119,18 +122,34 @@ async def execute_flow_pipeline(
                 feedback=feedback,
                 step_outputs=step_outputs,
                 steps=steps[:index],
+                article_step_id=flow.article_step_id,
             )
+            if not variables.get("draft", "").strip() and index > 0:
+                variables["draft"] = article_body(flow, steps[:index], step_outputs)
+            if not variables.get("draft", "").strip() and index > 0:
+                logger.warning(
+                    "Run %s step %s prompt has no draft/article body (outputs=%s)",
+                    run.run_id,
+                    step.step_key,
+                    sorted(step_outputs.keys()),
+                )
             step_puller = run_puller
             step_model = run_model
+            system_prompt = step.system_prompt
+            if is_review_loop_step(step):
+                system_prompt = f"{system_prompt.rstrip()}{review_json_prompt_instructions()}"
             ctx = StepContext(
                 step_key=step.step_key,
                 label=step.label,
-                system_prompt=step.system_prompt,
+                system_prompt=system_prompt,
                 user_prompt_template=step.user_prompt_template,
                 puller=step_puller,
                 model=step_model,
                 variables=variables,
-                enabled_tools=step.enabled_tools,
+                enabled_tools=resolve_step_tools(
+                    step.enabled_tools,
+                    review_step=is_review_loop_step(step),
+                ),
                 run_id=run.run_id,
                 brave_search_api_key=runtime.brave_search_api_key,
             )

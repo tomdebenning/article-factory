@@ -35,6 +35,9 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("topic_queue_snapshot_id", "INTEGER"),
         ("first_pass_accept", "INTEGER"),
     ],
+    "flow_queues": [
+        ("flow_version_id", "INTEGER"),
+    ],
     "step_executions": [
         ("response_content", "TEXT"),
         ("duration_ms", "INTEGER"),
@@ -42,6 +45,13 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("tools_used", "JSON"),
         ("progress", "JSON"),
         ("turns", "INTEGER"),
+    ],
+    "run_telemetry": [
+        ("final_article_text", "TEXT"),
+    ],
+    "iteration_telemetry": [
+        ("writer_content", "TEXT"),
+        ("reviewer_content", "TEXT"),
     ],
 }
 

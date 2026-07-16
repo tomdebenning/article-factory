@@ -9,7 +9,7 @@ import pytest
 import article_factory.db as db_module
 from article_factory.cms_client import CmsRequestError
 from article_factory.models import CompletedArticle, FactoryRun, TopicQueueItem
-from article_factory.orchestrator.runner import FactoryLoop, run_pipeline_for_topic
+from article_factory.orchestrator.runner import FactoryLoop, continue_active_run, run_pipeline_for_topic
 from article_factory.services.flow_schema import new_flow_definition
 from article_factory.services.flow_storage import write_flow
 
@@ -399,7 +399,16 @@ async def test_factory_loop_processes_queue(configured_db, monkeypatch) -> None:
     loop = FactoryLoop()
     started: list[str | None] = []
 
-    async def fake_pipeline(db, *, topic_slug, topic_prompt, queue_item_id=None, selected_puller=None, flow_path=None):
+    async def fake_pipeline(
+        db,
+        *,
+        topic_slug,
+        topic_prompt,
+        queue_item_id=None,
+        selected_puller=None,
+        flow_path=None,
+        flow_version_id=None,
+    ):
         started.append(selected_puller)
         run = FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
         db.add(run)
@@ -496,7 +505,16 @@ async def test_factory_loop_parallel_dispatch(configured_db, monkeypatch) -> Non
     loop = FactoryLoop()
     started: list[str | None] = []
 
-    async def fake_pipeline(db, *, topic_slug, topic_prompt, queue_item_id=None, selected_puller=None, flow_path=None):
+    async def fake_pipeline(
+        db,
+        *,
+        topic_slug,
+        topic_prompt,
+        queue_item_id=None,
+        selected_puller=None,
+        flow_path=None,
+        flow_version_id=None,
+    ):
         started.append(selected_puller)
         run = FactoryRun(
             run_id=f"run-{queue_item_id}",
@@ -688,3 +706,627 @@ async def test_run_pipeline_fails_when_flow_completes_without_content(
         assert db.query(CompletedArticle).filter_by(run_id=run.run_id).count() == 0
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_continues_when_showroom_run_event_fails(
+    configured_db,
+    pipeline_env,
+    monkeypatch,
+) -> None:
+    import httpx
+
+    cms = AsyncMock()
+    cms.post_run_event = AsyncMock(side_effect=httpx.ConnectError("Showroom down"))
+    cms.post_run_complete = AsyncMock(return_value={"ok": True})
+
+    async def fake_step(ctx, cp=None, tracer=None, run_id=None):
+        if ctx.step_key == "writer":
+            return _step_record("writer", "# Title\n\nBody.")
+        if ctx.step_key == "review":
+            return _step_record("review", "Good.\n\nVERDICT: ACCEPT")
+        return _step_record(ctx.step_key, "ok")
+
+    monkeypatch.setattr("article_factory.orchestrator.flow_runner.run_step_from_context", fake_step)
+    monkeypatch.setattr("article_factory.orchestrator.runner.CmsClient", lambda **kwargs: cms)
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: AsyncMock())
+
+    from article_factory.services.runtime_settings import update_factory_settings
+
+    db = db_module.SessionLocal()
+    try:
+        update_factory_settings(
+            db,
+            {
+                "cms_url": "http://cms.test:8200",
+                "cms_api_key": "secret",
+            },
+        )
+        run = await run_pipeline_for_topic(db, topic_slug="sports", topic_prompt="Cover the game")
+        assert run.status == "completed"
+        cms.post_run_event.assert_awaited()
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_custom_step_keys_pass_draft_to_review(configured_db, pipeline_env, monkeypatch) -> None:
+    seen: dict[str, str] = {}
+
+    async def fake_step(ctx, cp=None, tracer=None, run_id=None):
+        if ctx.step_key == "step_2":
+            seen["draft"] = ctx.variables.get("draft", "")
+        if ctx.step_key == "step_1":
+            return _step_record("step_1", "Custom essay body for review.")
+        if ctx.step_key == "step_2":
+            assert "Custom essay body" in ctx.variables.get("draft", "")
+            return _step_record("step_2", "Good.\n\nVERDICT: ACCEPT")
+        return _step_record(ctx.step_key, "ok")
+
+    monkeypatch.setattr("article_factory.orchestrator.flow_runner.run_step_from_context", fake_step)
+    monkeypatch.setattr("article_factory.orchestrator.runner.CmsClient", lambda **kwargs: AsyncMock())
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: AsyncMock())
+
+    from article_factory.services.flow_schema import FlowDefinition, FlowStep, FlowStepCompletion
+    from article_factory.services.flow_storage import write_flow
+
+    flow = FlowDefinition(
+        slug="custom-step-keys",
+        display_name="Custom",
+        article_step_id="essay-id",
+        steps=[
+            FlowStep(
+                step_id="essay-id",
+                order=1,
+                step_key="step_1",
+                label="Essayist",
+                user_prompt_template="{{topic}}",
+            ),
+            FlowStep(
+                step_id="editor-id",
+                order=2,
+                step_key="step_2",
+                label="Editor",
+                user_prompt_template="Draft:\n{{draft}}\n\nReview and VERDICT: ACCEPT or REJECT.",
+                completion=FlowStepCompletion(
+                    can_complete=True,
+                    can_loop=True,
+                    loop_goto_step_id="essay-id",
+                ),
+            ),
+        ],
+    )
+    write_flow("test/custom-step-keys.flow.json", flow)
+
+    db = db_module.SessionLocal()
+    try:
+        run = await run_pipeline_for_topic(
+            db,
+            topic_slug="sports",
+            topic_prompt="Topic here",
+            flow_path="test/custom-step-keys.flow.json",
+        )
+        assert run.status == "completed"
+        assert "Custom essay body" in seen.get("draft", "")
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_run_workers_cancels_active_tasks() -> None:
+    loop = FactoryLoop()
+    started = asyncio.Event()
+
+    async def slow_worker() -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    loop._run_workers["run-run-1"] = asyncio.create_task(slow_worker())
+    loop._run_workers["queue-2"] = asyncio.create_task(slow_worker())
+    loop._reserved_pullers.add("puller-x")
+
+    cancelled = loop.cancel_run_workers(run_ids=["run-1"], queue_item_ids=[2])
+    assert cancelled == 2
+    assert loop._reserved_pullers == set()
+    assert "run-run-1" not in loop._run_workers
+    assert "queue-2" not in loop._run_workers
+
+
+def test_clear_reserved_pullers() -> None:
+    loop = FactoryLoop()
+    loop._reserved_pullers.add("puller-a")
+    loop.clear_reserved_pullers()
+    assert loop._reserved_pullers == set()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_cancelled_run(configured_db, monkeypatch) -> None:
+    from article_factory.services.run_control import request_run_cancel
+
+    loop = FactoryLoop()
+    continued: list[str] = []
+
+    async def track_continue(self, run_id: str) -> None:
+        continued.append(run_id)
+
+    monkeypatch.setattr(FactoryLoop, "_continue_run", track_continue)
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(
+            FactoryRun(
+                run_id="cancelled-run",
+                topic_slug="sports",
+                status="running",
+                current_step="writer",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    await request_run_cancel("cancelled-run")
+    await loop._dispatch_tick()
+    assert continued == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_returns_without_model_or_control_plane(configured_db) -> None:
+    loop = FactoryLoop()
+    started: list[int] = []
+
+    async def fake_pipeline(db, **kwargs):
+        started.append(1)
+        return FactoryRun(run_id="x", topic_slug="sports", status="completed")
+
+    loop._spawn_worker = lambda key, coro: started.append(2)  # type: ignore[method-assign]
+
+    db = db_module.SessionLocal()
+    try:
+        from article_factory.services.runtime_settings import update_factory_settings
+
+        update_factory_settings(db, {"control_plane_url": "", "default_model": ""})
+        db.add(TopicQueueItem(topic_slug="sports", prompt="Queued"))
+        db.commit()
+    finally:
+        db.close()
+
+    await loop._dispatch_tick()
+    assert started == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_handles_puller_list_failure(configured_db, monkeypatch) -> None:
+    loop = FactoryLoop()
+
+    mock_cp = AsyncMock()
+    mock_cp.list_pullers = AsyncMock(side_effect=RuntimeError("cp down"))
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: mock_cp)
+
+    db = db_module.SessionLocal()
+    try:
+        from article_factory.services.runtime_settings import update_factory_settings
+
+        update_factory_settings(
+            db,
+            {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
+        )
+        db.add(TopicQueueItem(topic_slug="sports", prompt="Queued"))
+        db.commit()
+    finally:
+        db.close()
+
+    await loop._dispatch_tick()
+    assert loop._run_workers == {}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_clears_stale_puller_reservations(configured_db, monkeypatch) -> None:
+    loop = FactoryLoop()
+    started: list[str | None] = []
+
+    async def fake_pipeline(
+        db,
+        *,
+        topic_slug,
+        topic_prompt,
+        queue_item_id=None,
+        selected_puller=None,
+        flow_path=None,
+        flow_version_id=None,
+    ):
+        started.append(selected_puller)
+        run = FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
+        db.add(run)
+        db.commit()
+        return run
+
+    mock_cp = AsyncMock()
+    mock_cp.list_pullers = AsyncMock(
+        return_value=[
+            {
+                "puller_name": "puller-1",
+                "is_active": True,
+                "is_stale": False,
+                "status": "idle",
+                "supported_models": ["test-model"],
+            }
+        ]
+    )
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: mock_cp)
+    monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
+    loop._reserved_pullers.add("stale-puller")
+
+    db = db_module.SessionLocal()
+    try:
+        from article_factory.services.runtime_settings import update_factory_settings
+
+        update_factory_settings(
+            db,
+            {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
+        )
+        db.add(TopicQueueItem(topic_slug="sports", prompt="Queued"))
+        db.commit()
+    finally:
+        db.close()
+
+    await loop._dispatch_tick()
+    await asyncio.gather(*loop._run_workers.values(), return_exceptions=True)
+    assert started == ["puller-1"]
+    assert "stale-puller" not in loop._reserved_pullers
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_puller_without_name(configured_db, monkeypatch) -> None:
+    loop = FactoryLoop()
+    started: list[int] = []
+
+    async def fake_pipeline(db, **kwargs):
+        started.append(1)
+        return FactoryRun(run_id="x", topic_slug="sports", status="completed")
+
+    monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
+
+    mock_cp = AsyncMock()
+    mock_cp.list_pullers = AsyncMock(
+        return_value=[
+            {
+                "puller_name": "",
+                "is_active": True,
+                "is_stale": False,
+                "status": "idle",
+                "supported_models": ["test-model"],
+            }
+        ]
+    )
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: mock_cp)
+
+    db = db_module.SessionLocal()
+    try:
+        from article_factory.services.runtime_settings import update_factory_settings
+
+        update_factory_settings(
+            db,
+            {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
+        )
+        db.add(TopicQueueItem(topic_slug="sports", prompt="Queued"))
+        db.commit()
+    finally:
+        db.close()
+
+    await loop._dispatch_tick()
+    await asyncio.gather(*loop._run_workers.values(), return_exceptions=True)
+    assert started == []
+
+
+@pytest.mark.asyncio
+async def test_continue_run_missing_run(configured_db) -> None:
+    loop = FactoryLoop()
+    await loop._continue_run("missing-run-id")
+
+
+@pytest.mark.asyncio
+async def test_continue_active_run_restarts_without_pipeline_state(
+    configured_db, pipeline_env, monkeypatch
+) -> None:
+    executed: list[str] = []
+
+    async def fake_execute(db, *, run, topic_prompt, resume_from_step=None):
+        executed.append(topic_prompt)
+        run.status = "completed"
+        db.commit()
+        return run
+
+    monkeypatch.setattr("article_factory.orchestrator.runner._execute_pipeline", fake_execute)
+
+    db = db_module.SessionLocal()
+    try:
+        item = TopicQueueItem(topic_slug="sports", prompt="Resume me", status="running")
+        db.add(item)
+        db.flush()
+        run = FactoryRun(
+            run_id="restart-run",
+            topic_slug="sports",
+            queue_item_id=item.id,
+            status="running",
+            current_step="writer",
+        )
+        db.add(run)
+        db.commit()
+
+        handled = await continue_active_run(db, run)
+        assert handled is True
+        assert executed == ["Resume me"]
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_continue_active_run_resumes_with_pipeline_state(
+    configured_db, pipeline_env, monkeypatch
+) -> None:
+    resumed_from: list[str | None] = []
+
+    async def fake_execute(db, *, run, topic_prompt, resume_from_step=None):
+        resumed_from.append(resume_from_step)
+        run.status = "completed"
+        db.commit()
+        return run
+
+    monkeypatch.setattr("article_factory.orchestrator.runner._execute_pipeline", fake_execute)
+
+    db = db_module.SessionLocal()
+    try:
+        run = FactoryRun(
+            run_id="resume-run",
+            topic_slug="sports",
+            status="running",
+            current_step="writer",
+            pipeline_state={"step_outputs": {}, "feedback": "", "step_records": []},
+        )
+        db.add(run)
+        db.commit()
+
+        handled = await continue_active_run(db, run)
+        assert handled is True
+        assert resumed_from == ["writer"]
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_continue_active_run_non_running_returns_true(configured_db) -> None:
+    db = db_module.SessionLocal()
+    try:
+        run = FactoryRun(run_id="done-run", topic_slug="sports", status="completed")
+        db.add(run)
+        db.commit()
+        assert await continue_active_run(db, run) is True
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_ensure_running_restarts_stopped_loop(monkeypatch) -> None:
+    loop = FactoryLoop()
+    started = asyncio.Event()
+
+    async def fake_start(self) -> None:
+        started.set()
+        self._running = True
+        self._task = asyncio.create_task(asyncio.sleep(60))
+
+    monkeypatch.setattr(FactoryLoop, "start", fake_start)
+    loop._task = asyncio.create_task(asyncio.sleep(0))
+    await loop._task
+    loop._task = None
+
+    await loop.ensure_running()
+    assert started.is_set()
+    loop._task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await loop._task
+
+
+@pytest.mark.asyncio
+async def test_factory_loop_stop_cancels_workers() -> None:
+    loop = FactoryLoop()
+
+    async def worker() -> None:
+        await asyncio.sleep(60)
+
+    worker_task = asyncio.create_task(worker())
+    loop._running = True
+    loop._run_workers["run-1"] = worker_task
+    loop._reserved_pullers.add("puller-a")
+    loop._task = asyncio.create_task(asyncio.sleep(60))
+
+    await loop.stop()
+    assert loop._running is False
+    assert loop._run_workers == {}
+    assert loop._reserved_pullers == set()
+    with pytest.raises(asyncio.CancelledError):
+        await worker_task
+
+
+@pytest.mark.asyncio
+async def test_run_queue_item_clears_puller_reservation(configured_db, monkeypatch) -> None:
+    loop = FactoryLoop()
+    loop._reserved_pullers.add("puller-z")
+
+    async def fake_pipeline(db, **kwargs):
+        return FactoryRun(run_id="run-q", topic_slug="sports", status="completed")
+
+    monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
+
+    await loop._run_queue_item(1, "sports", "Prompt", "", "puller-z", None)
+    assert "puller-z" not in loop._reserved_pullers
+
+
+@pytest.mark.asyncio
+async def test_dispatch_passes_flow_version_from_queue(configured_db, monkeypatch) -> None:
+    from article_factory.models import FlowQueue
+    from article_factory.services.flow_versions import ensure_flow_version_for_run
+
+    loop = FactoryLoop()
+    captured: list[int | None] = []
+
+    async def fake_pipeline(
+        db,
+        *,
+        topic_slug,
+        topic_prompt,
+        queue_item_id=None,
+        selected_puller=None,
+        flow_path=None,
+        flow_version_id=None,
+    ):
+        captured.append(flow_version_id)
+        return FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
+
+    mock_cp = AsyncMock()
+    mock_cp.list_pullers = AsyncMock(
+        return_value=[
+            {
+                "puller_name": "puller-1",
+                "is_active": True,
+                "is_stale": False,
+                "status": "idle",
+                "supported_models": ["test-model"],
+            }
+        ]
+    )
+    monkeypatch.setattr("article_factory.orchestrator.runner.ControlPlaneClient", lambda **kwargs: mock_cp)
+    monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
+
+    db = db_module.SessionLocal()
+    try:
+        from article_factory.services.runtime_settings import update_factory_settings
+
+        update_factory_settings(
+            db,
+            {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
+        )
+        version = ensure_flow_version_for_run(db, "sports/standard-4-step.flow.json")
+        version_id = version.id
+        queue = FlowQueue(
+            slug="versioned",
+            name="Versioned",
+            flow_path="sports/standard-4-step.flow.json",
+            flow_version_id=version.id,
+            topic_slug="sports",
+        )
+        db.add(queue)
+        db.flush()
+        db.add(
+            TopicQueueItem(
+                flow_queue_id=queue.id,
+                topic_slug="sports",
+                prompt="Versioned queue",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    await loop._dispatch_tick()
+    await asyncio.gather(*loop._run_workers.values(), return_exceptions=True)
+    assert captured == [version_id]
+
+
+@pytest.mark.asyncio
+async def test_factory_loop_tick_handles_exception(monkeypatch) -> None:
+    loop = FactoryLoop()
+    loop._running = True
+    ticks = 0
+
+    async def boom_tick(self) -> None:
+        nonlocal ticks
+        ticks += 1
+        raise RuntimeError("tick failed")
+
+    async def stop_after_wait(self) -> None:
+        loop._running = False
+
+    monkeypatch.setattr(FactoryLoop, "_dispatch_tick", boom_tick)
+    monkeypatch.setattr(FactoryLoop, "_wait_for_next_tick", stop_after_wait)
+
+    await loop._loop()
+    assert ticks == 1
+
+
+@pytest.mark.asyncio
+async def test_request_dispatch_noop_when_not_running() -> None:
+    loop = FactoryLoop()
+    loop._running = False
+    loop.request_dispatch()
+    assert loop._dispatch_event is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_run_workers_skips_done_tasks() -> None:
+    loop = FactoryLoop()
+
+    async def quick() -> None:
+        return None
+
+    task = asyncio.create_task(quick())
+    await task
+    loop._run_workers["run-done"] = task
+
+    cancelled = loop.cancel_run_workers(run_ids=["done"], queue_item_ids=[])
+    assert cancelled == 0
+
+
+@pytest.mark.asyncio
+async def test_continue_active_run_fails_interrupted_run(
+    configured_db, pipeline_env, monkeypatch
+) -> None:
+    from article_factory.models import StepExecution
+
+    db = db_module.SessionLocal()
+    try:
+        run = FactoryRun(
+            run_id="interrupted-run",
+            topic_slug="sports",
+            status="running",
+            current_step="writer",
+        )
+        db.add(run)
+        db.flush()
+        db.add(
+            StepExecution(
+                run_id="interrupted-run",
+                step_key="writer",
+                status="waiting",
+                puller="gpu-01",
+                model="test-model",
+            )
+        )
+        db.commit()
+
+        handled = await continue_active_run(db, run)
+        assert handled is True
+        db.refresh(run)
+        assert run.status == "failed"
+        assert "interrupted" in (run.error or "").lower()
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_ensure_running_noop_when_task_alive(monkeypatch) -> None:
+    loop = FactoryLoop()
+    started = asyncio.Event()
+
+    async def fake_start(self) -> None:
+        started.set()
+
+    monkeypatch.setattr(FactoryLoop, "start", fake_start)
+    loop._task = asyncio.create_task(asyncio.sleep(60))
+
+    await loop.ensure_running()
+    assert not started.is_set()
+    loop._task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await loop._task

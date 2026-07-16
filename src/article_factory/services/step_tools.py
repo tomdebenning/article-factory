@@ -6,6 +6,7 @@ from typing import Any
 
 from article_factory.config import settings
 from article_factory.services.brave_search import brave_web_search, format_brave_results
+from article_factory.services.flow_schema import FlowStep
 from article_factory.services.web_fetch import fetch_web_page, format_fetch_result
 
 TOOL_WRITE_FILE = "write_file"
@@ -42,10 +43,22 @@ def all_step_tools_enabled() -> dict[str, bool]:
     return {name: True for name in FACTORY_STEP_TOOL_NAMES}
 
 
-def resolve_step_tools(raw: dict[str, Any] | None = None) -> dict[str, bool]:
-    """Every factory step gets the full tool set regardless of flow JSON toggles."""
+def resolve_step_tools(raw: dict[str, Any] | None = None, *, review_step: bool = False) -> dict[str, bool]:
+    """Return tool flags for a factory step.
+
+    Research/writing steps get the full tool set. Review steps that gate the
+    loop (can_complete + can_loop) must not use web/workspace tools — the draft
+    is already in the prompt.
+    """
+    if review_step:
+        return normalize_step_enabled_tools(None)
     _ = raw
     return all_step_tools_enabled()
+
+
+def is_review_loop_step(step: FlowStep) -> bool:
+    completion = step.completion
+    return bool(completion and completion.can_complete and completion.can_loop)
 
 
 def step_has_tools(enabled: dict[str, bool]) -> bool:

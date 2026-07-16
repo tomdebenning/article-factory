@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from article_factory.services.review_parser import review_json_prompt_instructions
+
 
 class FlowStepLoop(BaseModel):
     enabled: bool = False
@@ -133,11 +135,13 @@ def new_flow_definition(*, slug: str, display_name: str, step_count: int) -> Flo
         last.system_prompt = (
             "You review work for quality and accuracy. Provide detailed feedback in the body "
             "of your response. End with a final line: VERDICT: ACCEPT or VERDICT: REJECT."
+            + review_json_prompt_instructions()
         )
         last.user_prompt_template = (
             "Topic: {{topic}}\n\n"
             "{{feedback}}"
-            "Review the pipeline outputs and respond with detailed feedback, then VERDICT: ACCEPT or REJECT."
+            "Draft:\n{{draft}}\n\n"
+            "Review the draft thoroughly, then end with VERDICT: ACCEPT or VERDICT: REJECT."
         )
         last.completion = FlowStepCompletion(
             can_complete=True,

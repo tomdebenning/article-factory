@@ -21,12 +21,13 @@ async def test_stop_run(client, api_headers, configured_db) -> None:
     from article_factory.db import SessionLocal
     from article_factory.models import FactoryRun, StepExecution
 
+    run_id = "run-stop-control-test"
     db = SessionLocal()
     try:
-        db.add(FactoryRun(run_id="run-stop", topic_slug="sports", status="running", current_step="writer"))
+        db.add(FactoryRun(run_id=run_id, topic_slug="sports", status="running", current_step="writer"))
         db.add(
             StepExecution(
-                run_id="run-stop",
+                run_id=run_id,
                 step_key="writer",
                 status="waiting",
                 puller="puller-01",
@@ -37,21 +38,21 @@ async def test_stop_run(client, api_headers, configured_db) -> None:
     finally:
         db.close()
 
-    response = client.post("/api/runs/run-stop/stop", headers=api_headers)
+    response = client.post(f"/api/runs/{run_id}/stop", headers=api_headers)
     assert response.status_code == 200
     assert response.json()["ok"] is True
 
     db = SessionLocal()
     try:
-        run = db.query(FactoryRun).filter_by(run_id="run-stop").one()
+        run = db.query(FactoryRun).filter_by(run_id=run_id).one()
         assert run.status == "cancelled"
-        step = db.query(StepExecution).filter_by(run_id="run-stop").one()
+        step = db.query(StepExecution).filter_by(run_id=run_id).one()
         assert step.status == "failed"
         assert step.error == "Run stopped"
     finally:
         db.close()
 
-    again = client.post("/api/runs/run-stop/stop", headers=api_headers)
+    again = client.post(f"/api/runs/{run_id}/stop", headers=api_headers)
     assert again.json()["ok"] is False
 
 

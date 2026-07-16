@@ -6,7 +6,7 @@ from article_factory.models import FactoryRun, TopicQueueItem
 from article_factory.services.factory_readiness import assess_factory_readiness
 from article_factory.services.runtime_settings import RuntimeSettings
 
-RETRY_SKIP_CHECK_IDS = frozenset({"topics"})
+RETRY_SKIP_CHECK_IDS = frozenset({"topics", "cms_url", "cms_connection"})
 
 
 def is_queue_item_rerunnable(item: TopicQueueItem, run: FactoryRun | None) -> bool:

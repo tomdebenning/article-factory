@@ -1,4 +1,18 @@
 const KEY = "factory_api_key";
+const API_KEY_COOKIE = "factory_api_key";
+const API_KEY_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+function syncApiKeyCookie(value: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    document.cookie = `${API_KEY_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+    return;
+  }
+  document.cookie = `${API_KEY_COOKIE}=${encodeURIComponent(trimmed)}; path=/; max-age=${API_KEY_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
+}
 
 export function getApiKey(): string {
   return localStorage.getItem(KEY) || "";
@@ -6,6 +20,11 @@ export function getApiKey(): string {
 
 export function setApiKey(value: string) {
   localStorage.setItem(KEY, value);
+  syncApiKeyCookie(value);
+}
+
+if (typeof window !== "undefined") {
+  syncApiKeyCookie(getApiKey());
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -422,6 +441,18 @@ export type StopAllRunsResult = {
   message: string;
 };
 
+export type StopAndClearFlowQueueResult = {
+  ok: boolean;
+  queue_id: number;
+  queue_name: string;
+  stopped_runs: number;
+  stopped_run_ids: string[];
+  cleared_queued_items: number;
+  cleared_pending_items?: number;
+  deleted_runs?: number;
+  message: string;
+};
+
 export type ConnectionTestResult = {
   ok: boolean;
   message: string;
@@ -514,12 +545,48 @@ export type TopicQueueSnapshotSummary = {
   created_at?: string | null;
 };
 
+export type TurnCountRow = {
+  turn: number;
+  count: number;
+};
+
+export type TurnOutcomeCharts = {
+  success_by_turn: TurnCountRow[];
+  failure_by_turn: TurnCountRow[];
+  success_total: number;
+  failure_total: number;
+};
+
 export type FlowPerformanceAggregate = {
   run_count: number;
   completed_count: number;
+  completion_rate?: number | null;
   first_pass_count: number;
+  first_pass_yield_rate?: number | null;
+  first_pass_completed_rate?: number | null;
+  /** @deprecated use first_pass_completed_rate */
+  first_pass_scored_count?: number;
   first_pass_rate: number | null;
   avg_tokens: number | null;
+  avg_review_rounds?: number | null;
+  median_review_rounds?: number | null;
+  avg_step_turns?: number | null;
+  median_step_turns?: number | null;
+  failure_count?: number;
+  failure_rate?: number | null;
+  error_groups?: ErrorGroupCount[];
+  turn_charts?: TurnOutcomeCharts;
+};
+
+export type ErrorGroupCount = {
+  error_group: string;
+  error_group_label: string;
+  count: number;
+};
+
+export type ErrorGroupOption = {
+  error_group: string;
+  error_group_label: string;
 };
 
 export type FlowPerformanceRun = {
@@ -532,18 +599,73 @@ export type FlowPerformanceRun = {
   first_pass_accept?: boolean | null;
   draft_number?: number;
   review_round?: number;
+  review_rounds?: number;
+  review_cycles?: number;
+  total_step_turns?: number;
   iteration_count?: number;
+  error_group?: string;
+  error_group_label?: string;
+  auto_error_group?: string;
+  manual_tag?: string | null;
+  manual_note?: string | null;
+  error_message?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+};
+
+export type FlowPerformanceBatchRow = FlowPerformanceAggregate & {
+  topic_queue_snapshot_id?: number | null;
+  queue_name?: string | null;
 };
 
 export type FlowPerformanceData = {
   flow_path: string;
   overall: FlowPerformanceAggregate;
   by_version: Array<FlowPerformanceAggregate & { flow_version_id?: number | null }>;
-  by_topic_queue: Array<FlowPerformanceAggregate & { topic_queue_snapshot_id?: number | null; queue_name?: string | null }>;
+  by_topic_queue: Array<FlowPerformanceBatchRow>;
   by_model: Array<FlowPerformanceAggregate & { model: string }>;
+  batches: FlowPerformanceBatchRow[];
   runs: FlowPerformanceRun[];
+};
+
+export type BatchComparisonTopicRow = {
+  queue_item_id?: number | null;
+  topic_slug: string;
+  prompt_preview?: string;
+  run_id?: string | null;
+  status: string;
+  error_group: string;
+  error_group_label: string;
+  auto_error_group?: string;
+  error_message?: string | null;
+  manual_tag?: string | null;
+  manual_note?: string | null;
+  review_rounds?: number | null;
+  review_cycles?: number | null;
+  total_step_turns?: number | null;
+  step_turns_by_step?: Record<string, number>;
+  first_pass_accept?: boolean | null;
+  selected_model?: string | null;
+  selected_puller?: string | null;
+  flow_version_id?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type BatchComparisonData = {
+  snapshot: TopicQueueSnapshotSummary;
+  flow_path?: string | null;
+  filters: {
+    topic_queue_snapshot_id: number;
+    flow_version_id?: number | null;
+    selected_model?: string | null;
+    selected_puller?: string | null;
+  };
+  summary: FlowPerformanceAggregate;
+  error_groups: Array<ErrorGroupCount & { run_ids?: string[] }>;
+  turn_charts?: TurnOutcomeCharts;
+  topics: BatchComparisonTopicRow[];
+  runs: BatchComparisonTopicRow[];
 };
 
 export type PromptAnalysisResult = {
@@ -564,6 +686,66 @@ export type PromptAnalysisResult = {
   created_at?: string | null;
 };
 
+export type PromptImprovementStep = {
+  step_key: string;
+  label: string;
+  has_system_prompt: boolean;
+  has_user_prompt_template: boolean;
+};
+
+export type PromptImprovementJob = {
+  id: number;
+  flow_path: string;
+  source_flow_version_id: number;
+  scope: "step" | "flow";
+  target_step_key: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress_stage: string;
+  progress_percent: number;
+  selected_model: string;
+  selected_puller: string;
+  run_count: number;
+  result_flow_version_id?: number | null;
+  report_id?: number | null;
+  error_message?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type PromptImprovementReport = {
+  id: number;
+  job_id: number;
+  flow_path: string;
+  source_flow_version_id: number;
+  result_flow_version_id?: number | null;
+  scope: "step" | "flow";
+  target_step_key: string;
+  summary: string;
+  actionable_items: Array<{
+    title: string;
+    priority?: string;
+    rationale?: string;
+    evidence_run_ids?: string[];
+  }>;
+  detailed_report: string;
+  prompt_changes: Array<{
+    step_key: string;
+    label?: string;
+    fields?: string[];
+    rationale?: string;
+    conclusion?: string;
+    evidence_run_ids?: string[];
+  }>;
+  example_runs: {
+    success?: Array<Record<string, unknown>>;
+    failure?: Array<Record<string, unknown>>;
+  };
+  selected_model: string;
+  selected_puller: string;
+  created_at?: string | null;
+};
+
 export type FlowTreeNode = {
   name: string;
   path: string;
@@ -574,6 +756,30 @@ export type FlowTreeNode = {
 };
 
 export const DEFAULT_FLOW_PATH = "sports/standard-4-step.flow.json";
+
+function submitTelemetryExportForm(path: string, flowVersionId: number): void {
+  const form = document.createElement("form");
+  form.method = "GET";
+  form.action = "/api/flows/telemetry/export";
+  form.target = "_blank";
+  form.rel = "noopener noreferrer";
+  form.style.display = "none";
+
+  for (const [name, value] of Object.entries({
+    path,
+    flow_version_id: String(flowVersionId),
+  })) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
 
 export const api = {
   authStatus: () => request<AuthKeyStatus>("/api/auth"),
@@ -676,6 +882,10 @@ export const api = {
       `/api/flow-queues/${queueId}`,
       { method: "DELETE" },
     ),
+  stopAndClearFlowQueue: (queueId: number) =>
+    request<StopAndClearFlowQueueResult>(`/api/flow-queues/${queueId}/stop-and-clear`, {
+      method: "POST",
+    }),
   enqueueFlowQueueTopics: (queueId: number, topics: string[], priority = 100) =>
     request<{ count: number; items: QueueItem[] }>(`/api/flow-queues/${queueId}/enqueue`, {
       method: "POST",
@@ -702,6 +912,7 @@ export const api = {
   startFlowQueue: (body: {
     name: string;
     flow_path: string;
+    flow_version_id?: number;
     topic_slug?: string;
     default_model: string;
     topics: string[];
@@ -774,6 +985,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path, message }),
     }),
+  getFlowVersionDetail: (versionId: number) =>
+    request<{ version: FlowVersionSummary & { flow_content: FlowDefinition } }>(
+      `/api/flows/versions/detail?version_id=${versionId}`,
+    ),
+  applyFlowVersion: (versionId: number) =>
+    request<{ version: FlowVersionSummary; message: string }>("/api/flows/versions/apply", {
+      method: "POST",
+      body: JSON.stringify({ version_id: versionId }),
+    }),
   listFlowVersions: (path: string) =>
     request<{ flow_path: string; versions: FlowVersionSummary[] }>(
       `/api/flows/versions?path=${encodeURIComponent(path)}`,
@@ -790,6 +1010,31 @@ export const api = {
     if (filters?.selected_model) params.set("selected_model", filters.selected_model);
     return request<FlowPerformanceData>(`/api/flows/performance?${params.toString()}`);
   },
+  downloadTelemetryCsv: async (path: string, flowVersionId: number) => {
+    const apiKey = getApiKey().trim();
+    if (!apiKey) {
+      throw new Error(
+        'No factory API key in this browser. Open Settings, paste your key under "Use this key in this browser", then try again.',
+      );
+    }
+
+    syncApiKeyCookie(apiKey);
+
+    const checkParams = new URLSearchParams({
+      path,
+      flow_version_id: String(flowVersionId),
+      limit: "1",
+    });
+    const check = await fetch(`/api/flows/telemetry?${checkParams.toString()}`, {
+      headers: { "X-API-Key": apiKey },
+      credentials: "same-origin",
+    });
+    if (!check.ok) {
+      throw new Error(await readErrorMessage(check));
+    }
+
+    submitTelemetryExportForm(path, flowVersionId);
+  },
   listFlowTopicQueues: (path: string) =>
     request<{ topic_queues: TopicQueueSnapshotSummary[] }>(
       `/api/flows/topic-queues?path=${encodeURIComponent(path)}`,
@@ -804,6 +1049,59 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  getPromptImprovementSteps: (path: string, flowVersionId: number) =>
+    request<{
+      flow_path: string;
+      flow_version_id: number;
+      min_completed_runs: number;
+      steps: PromptImprovementStep[];
+    }>(
+      `/api/flows/prompt-improvement/steps?path=${encodeURIComponent(path)}&flow_version_id=${flowVersionId}`,
+    ),
+  startPromptImprovement: (body: {
+    path: string;
+    flow_version_id: number;
+    scope: "step" | "flow";
+    target_step_key?: string;
+    selected_model: string;
+    selected_puller: string;
+  }) =>
+    request<{ job: PromptImprovementJob }>("/api/flows/prompt-improvement", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listPromptImprovementJobs: (path: string, flowVersionId?: number) => {
+    const params = new URLSearchParams({ path });
+    if (flowVersionId !== undefined) params.set("flow_version_id", String(flowVersionId));
+    return request<{ jobs: PromptImprovementJob[] }>(`/api/flows/prompt-improvement?${params.toString()}`);
+  },
+  getPromptImprovementJob: (jobId: number) =>
+    request<{ job: PromptImprovementJob }>(`/api/flows/prompt-improvement/${jobId}`),
+  getPromptImprovementReport: (reportId: number) =>
+    request<{ report: PromptImprovementReport }>(`/api/flows/prompt-improvement/reports/${reportId}`),
+  getBatchComparison: (
+    topicQueueSnapshotId: number,
+    filters?: {
+      flow_version_id?: number;
+      selected_model?: string;
+      selected_puller?: string;
+    },
+  ) => {
+    const params = new URLSearchParams({
+      topic_queue_snapshot_id: String(topicQueueSnapshotId),
+    });
+    if (filters?.flow_version_id) params.set("flow_version_id", String(filters.flow_version_id));
+    if (filters?.selected_model) params.set("selected_model", filters.selected_model);
+    if (filters?.selected_puller) params.set("selected_puller", filters.selected_puller);
+    return request<BatchComparisonData>(`/api/flows/batch-comparison?${params.toString()}`);
+  },
+  listErrorGroups: () =>
+    request<{ error_groups: ErrorGroupOption[] }>("/api/flows/error-groups"),
+  saveRunErrorTag: (runId: string, body: { error_group?: string; note?: string }) =>
+    request<{ error_tag: { run_id: string; error_group: string; note: string } }>(
+      `/api/flows/runs/${encodeURIComponent(runId)}/error-tag`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
   listRuns: () => request<{ runs: RunSummary[] }>("/api/runs"),
   getStats: (recentLimit = 50) =>
     request<FactoryStats>(`/api/stats?recent_limit=${recentLimit}`),

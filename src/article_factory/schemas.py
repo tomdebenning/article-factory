@@ -55,6 +55,7 @@ class QueuePresetBody(BaseModel):
 class FlowQueueStartBody(BaseModel):
     name: str
     flow_path: str
+    flow_version_id: int | None = None
     topic_slug: str = "general"
     default_model: str = ""
     topics: list[str] = Field(default_factory=list)

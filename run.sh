@@ -190,6 +190,24 @@ fi
 info "Initializing database (if needed) ..."
 "$VENV/bin/article-factory" init-db
 
+FACTORY_API_KEY_DISPLAY="$("$PYTHON" - <<'PY' 2>/dev/null || true
+from article_factory.db import SessionLocal
+from article_factory.services.runtime_settings import get_effective_factory_api_key, get_or_create_factory_settings
+from article_factory.services.factory_api_key_cache import warm_factory_api_key_cache
+from article_factory.services.api_keys import is_real_api_key
+
+db = SessionLocal()
+try:
+    get_or_create_factory_settings(db)
+    warm_factory_api_key_cache(db)
+    key = get_effective_factory_api_key(db)
+    if is_real_api_key(key):
+        print(key)
+finally:
+    db.close()
+PY
+)"
+
 free_port "$API_PORT" api
 free_port "$WEB_PORT" web
 
@@ -243,6 +261,11 @@ if [[ -n "$LAN_IP" && "$API_HOST" == "0.0.0.0" ]]; then
 fi
 echo ""
 echo "  Logs: ${ROOT}/.api.log  ${ROOT}/.web.log"
+if [[ -n "${FACTORY_API_KEY_DISPLAY:-}" ]]; then
+  echo ""
+  echo "  Factory API key (paste in Settings → Use this key in this browser):"
+  echo "    ${FACTORY_API_KEY_DISPLAY}"
+fi
 echo "  Press Ctrl+C to stop both."
 echo "========================================"
 echo ""

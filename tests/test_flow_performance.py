@@ -224,6 +224,8 @@ def test_flow_performance_api(client, api_headers, configured_db) -> None:
     body = perf.json()
     assert body["overall"]["first_pass_count"] == 1
     assert body["overall"]["first_pass_rate"] == 1.0
+    assert body["overall"]["first_pass_yield_rate"] == 1.0
+    assert body["overall"]["first_pass_completed_rate"] == 1.0
 
     analyze = client.post(
         "/api/flows/analyze",

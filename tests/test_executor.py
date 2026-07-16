@@ -427,3 +427,223 @@ async def test_run_step_from_context_failure_marks_tracer(configured_db) -> None
         await run_step_from_context(ctx, cp, tracer=tracer)
 
     assert tracer.execution.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_execute_step_retries_after_empty_response(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "step_empty_response_max_attempts", 3)
+
+    responses = [
+        {"message": {"content": ""}, "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}},
+        {
+            "message": {"content": "Review complete.\n\nVERDICT: REJECT"},
+            "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+            "completed_at": "2026-01-01T00:00:00Z",
+        },
+    ]
+
+    cp = AsyncMock(spec=ControlPlaneClient)
+    cp.get_task_status = AsyncMock(return_value=None)
+    cp.submit_task = AsyncMock(return_value={"queue_depth": 0})
+    cp.task_was_fetched = AsyncMock(return_value=False)
+    cp.poll_responses = AsyncMock(side_effect=[[response] for response in responses])
+
+    with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
+        result = await execute_step(
+            cp,
+            step_key="step_2",
+            system_prompt="Review the draft.",
+            user_content="Draft:\nArticle body",
+            puller="puller-a",
+            model="model-a",
+        )
+
+    assert result["content"] == "Review complete.\n\nVERDICT: REJECT"
+    assert cp.submit_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_step_fails_after_empty_response_retries_exhausted(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "step_empty_response_max_attempts", 2)
+
+    cp = AsyncMock(spec=ControlPlaneClient)
+    cp.get_task_status = AsyncMock(return_value=None)
+    cp.submit_task = AsyncMock(return_value={"queue_depth": 0})
+    cp.task_was_fetched = AsyncMock(return_value=False)
+    cp.poll_responses = AsyncMock(
+        return_value=[{"message": {"content": ""}, "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}}]
+    )
+
+    with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
+        with pytest.raises(RuntimeError, match="returned empty content"):
+            await execute_step(
+                cp,
+                step_key="step_2",
+                system_prompt="Review the draft.",
+                user_content="Draft:\nArticle body",
+                puller="puller-a",
+                model="model-a",
+            )
+
+    assert cp.submit_task.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_step_response_error(configured_db, monkeypatch) -> None:
+    import article_factory.db as db_module
+    from article_factory.models import FactoryRun
+    from article_factory.services.step_trace import StepTracer
+
+    cp = AsyncMock()
+    cp.get_task_status = AsyncMock(return_value={"status": "failed"})
+    cp.submit_task = AsyncMock(return_value={})
+    cp.task_was_fetched = AsyncMock(return_value=True)
+    cp.poll_responses = AsyncMock(
+        return_value=[{"message": {"content": "oops"}, "error": "model error", "usage": {}}]
+    )
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(FactoryRun(run_id="err-run", topic_slug="sports", status="running"))
+        db.commit()
+        tracer = StepTracer(db, run_id="err-run", step_key="writer", puller="p", model="m")
+    finally:
+        db.close()
+
+    with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
+        result = await execute_step(
+            cp,
+            step_key="writer",
+            system_prompt="sys",
+            user_content="user",
+            puller="p",
+            model="m",
+            tracer=tracer,
+        )
+
+    assert result["error"] == "model error"
+    assert tracer.execution.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_execute_step_tool_round_without_tracer(monkeypatch, tmp_path) -> None:
+    import json
+
+    monkeypatch.setattr("article_factory.config.settings.flow_run_outputs_root", str(tmp_path))
+
+    cp = AsyncMock()
+    cp.get_task_status = AsyncMock(return_value={"status": "fetched"})
+    cp.submit_task = AsyncMock(return_value={})
+    cp.task_was_fetched = AsyncMock(return_value=True)
+    cp.poll_responses = AsyncMock(
+        side_effect=[
+            [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "function": {
+                                    "name": "write_file",
+                                    "arguments": json.dumps({"path": "out.txt", "content": "saved"}),
+                                },
+                            },
+                            "bad-call",
+                        ],
+                    },
+                    "usage": {},
+                }
+            ],
+            [{"message": {"content": "final answer"}, "usage": {}}],
+        ]
+    )
+
+    with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
+        result = await execute_step(
+            cp,
+            step_key="writer",
+            system_prompt="sys",
+            user_content="user",
+            puller="p",
+            model="m",
+            run_id="tool-round",
+            enabled_tools={"write_file": True, "read_file": False, "web_search": False, "web_fetch": False},
+        )
+
+    assert result["content"] == "final answer"
+    assert result["tools_used"]
+
+
+@pytest.mark.asyncio
+async def test_run_step_from_context_cancelled(configured_db) -> None:
+    import article_factory.db as db_module
+    from article_factory.models import FactoryRun
+    from article_factory.services.run_control import RunCancelledError, request_run_cancel
+    from article_factory.services.step_trace import StepTracer
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(FactoryRun(run_id="ctx-cancel", topic_slug="sports", status="running"))
+        db.commit()
+        tracer = StepTracer(db, run_id="ctx-cancel", step_key="writer", puller="p", model="m")
+    finally:
+        db.close()
+
+    await request_run_cancel("ctx-cancel")
+
+    cp = AsyncMock()
+    cp.submit_task = AsyncMock(return_value={})
+    cp.poll_responses = AsyncMock(return_value=[])
+    cp.task_was_fetched = AsyncMock(return_value=False)
+    cp.get_task_status = AsyncMock(return_value=None)
+
+    ctx = StepContext(
+        step_key="writer",
+        label="Writer",
+        system_prompt="sys",
+        user_prompt_template="hi",
+        puller="p",
+        model="m",
+        variables={},
+        run_id="ctx-cancel",
+    )
+
+    with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
+        with pytest.raises(RunCancelledError):
+            await run_step_from_context(ctx, cp, tracer=tracer)
+
+    assert tracer.execution.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_run_step_from_context_generic_failure(configured_db) -> None:
+    import article_factory.db as db_module
+    from article_factory.models import FactoryRun
+    from article_factory.services.step_trace import StepTracer
+
+    db = db_module.SessionLocal()
+    try:
+        db.add(FactoryRun(run_id="ctx-fail", topic_slug="sports", status="running"))
+        db.commit()
+        tracer = StepTracer(db, run_id="ctx-fail", step_key="writer", puller="p", model="m")
+    finally:
+        db.close()
+
+    cp = AsyncMock()
+    cp.submit_task = AsyncMock(side_effect=RuntimeError("cp exploded"))
+
+    ctx = StepContext(
+        step_key="writer",
+        label="Writer",
+        system_prompt="sys",
+        user_prompt_template="hi",
+        puller="p",
+        model="m",
+        variables={},
+    )
+
+    with pytest.raises(RuntimeError, match="cp exploded"):
+        await run_step_from_context(ctx, cp, tracer=tracer)
+
+    assert tracer.execution.status == "failed"

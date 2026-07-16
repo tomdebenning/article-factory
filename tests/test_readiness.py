@@ -149,6 +149,40 @@ async def test_readiness_setup_required_without_showroom(monkeypatch) -> None:
         _cms_ok,
     )
 
+    class FakeCp:
+        async def list_pullers(self, *, active_only=False):
+            return [
+                {
+                    "puller_name": "gpu-01",
+                    "is_active": True,
+                    "is_stale": False,
+                    "status": "ok",
+                    "supported_models": ["llama3"],
+                }
+            ]
+
+    monkeypatch.setattr(
+        "article_factory.services.factory_readiness.ControlPlaneClient",
+        lambda base_url: FakeCp(),
+    )
+
+    import httpx
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            class Resp:
+                def raise_for_status(self): ...
+
+            return Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: FakeAsyncClient())
+
     result = await assess_factory_readiness(
         runtime=RuntimeSettings(
             control_plane_url="http://cp.test:8000",
@@ -156,12 +190,15 @@ async def test_readiness_setup_required_without_showroom(monkeypatch) -> None:
             cms_api_key="",
             default_puller="",
             default_model="llama3",
+            brave_search_api_key="brave-key",
         ),
         loop_running=True,
         active_run=None,
         queue_counts={"queued": 0, "running": 0, "completed": 0, "failed": 0},
     )
-    assert result["phase"] == "setup_required"
+    assert result["phase"] == "needs_topics"
+    assert result["setup_complete"] is True
+    assert result["can_publish"] is False
     cms = next(c for c in result["checks"] if c["id"] == "cms_url")
     assert cms["ok"] is False
 
@@ -333,15 +370,82 @@ async def test_readiness_showroom_connection_failed(monkeypatch) -> None:
             cms_api_key="secret",
             default_puller="",
             default_model="llama3",
+            brave_search_api_key="brave-key",
         ),
         loop_running=True,
         active_run=None,
         queue_counts={"queued": 0, "running": 0, "completed": 0, "failed": 0},
     )
-    assert result["phase"] == "setup_required"
+    assert result["phase"] == "needs_topics"
+    assert result["setup_complete"] is True
+    assert result["can_publish"] is False
     cms = next(c for c in result["checks"] if c["id"] == "cms_connection")
     assert cms["ok"] is False
     assert cms["action_path"] == "/settings"
+    assert cms["id"] not in {c["id"] for c in result["issue_checks"]}
+
+
+@pytest.mark.asyncio
+async def test_readiness_can_write_when_showroom_down_but_control_plane_ok(monkeypatch) -> None:
+    async def cms_fail(*args, **kwargs):
+        return False, "Showroom CMS unreachable: connection refused"
+
+    monkeypatch.setattr(
+        "article_factory.services.factory_readiness.check_cms_connection",
+        cms_fail,
+    )
+
+    class FakeCp:
+        async def list_pullers(self, *, active_only=False):
+            return [
+                {
+                    "puller_name": "gpu-01",
+                    "is_active": True,
+                    "is_stale": False,
+                    "status": "ok",
+                    "supported_models": ["llama3"],
+                }
+            ]
+
+    monkeypatch.setattr(
+        "article_factory.services.factory_readiness.ControlPlaneClient",
+        lambda base_url: FakeCp(),
+    )
+
+    import httpx
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url):
+            class Resp:
+                def raise_for_status(self): ...
+
+            return Resp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: FakeAsyncClient())
+
+    result = await assess_factory_readiness(
+        runtime=RuntimeSettings(
+            control_plane_url="http://cp.test:8000",
+            cms_url="http://cms.test:8200",
+            cms_api_key="secret",
+            default_puller="",
+            default_model="llama3",
+            brave_search_api_key="brave-key",
+        ),
+        loop_running=True,
+        active_run=None,
+        queue_counts={"queued": 2, "running": 0, "completed": 0, "failed": 0},
+    )
+    assert result["setup_complete"] is True
+    assert result["can_write"] is True
+    assert result["can_publish"] is False
+    assert result["phase"] == "ready"
 
 
 @pytest.mark.asyncio

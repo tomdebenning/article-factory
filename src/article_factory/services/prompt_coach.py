@@ -67,19 +67,36 @@ def analyze_flow_performance(
 
     gate_key, producer_keys = resolve_gate_config(flow)
     overall = metrics["overall"]
-    rate = overall.get("first_pass_rate")
-    run_count = int(overall.get("completed_count") or 0)
+    total_runs = int(overall.get("run_count") or 0)
+    completed_count = int(overall.get("completed_count") or 0)
+    completion_rate = overall.get("completion_rate")
+    yield_rate = overall.get("first_pass_yield_rate")
+    completed_rate = overall.get("first_pass_completed_rate") or overall.get("first_pass_rate")
+    first_pass = int(overall.get("first_pass_count") or 0)
 
     suggestions: list[dict[str, Any]] = []
-    summary_parts = [f"Analyzed {run_count} completed run(s) on {flow_path}."]
-    if rate is not None:
-        summary_parts.append(f"First-pass accept rate: {rate * 100:.0f}%.")
-    else:
-        summary_parts.append("Not enough completed runs with performance data yet.")
+    summary_parts = [f"Analyzed {total_runs} run(s) on {flow_path}."]
+    if total_runs > 0:
+        pct_complete = f"{completion_rate * 100:.0f}%" if completion_rate is not None else "—"
+        summary_parts.append(
+            f"Artifact yield: {completed_count}/{total_runs} runs completed ({pct_complete})."
+        )
+    if total_runs > 0 and yield_rate is not None:
+        summary_parts.append(
+            f"First-pass yield (all runs): {yield_rate * 100:.0f}% "
+            f"({first_pass}/{total_runs} accepted on the first review)."
+        )
+    if completed_count > 0 and completed_rate is not None:
+        summary_parts.append(
+            f"First-pass among completions: {completed_rate * 100:.0f}% "
+            f"({first_pass}/{completed_count} completed without a rewrite loop)."
+        )
+    elif completed_count == 0:
+        summary_parts.append("No completed runs in this cohort yet.")
 
-    if gate_key and run_count > 0:
+    if gate_key and completed_count > 0:
         reject_samples = _collect_reject_samples(runs, gate_key)
-        if rate is not None and rate < 0.7 and producer_keys:
+        if completed_rate is not None and completed_rate < 0.7 and producer_keys:
             producer = producer_keys[0]
             step = next((item for item in flow.steps if item.step_key == producer), None)
             suggestions.append(
@@ -110,7 +127,7 @@ def analyze_flow_performance(
                 }
             )
 
-    if not suggestions and run_count >= 3 and rate is not None and rate >= 0.7:
+    if not suggestions and total_runs >= 3 and completion_rate is not None and completion_rate >= 0.7:
         suggestions.append(
             {
                 "step_key": "",
@@ -125,8 +142,8 @@ def analyze_flow_performance(
         flow_version_id=flow_version_id,
         topic_queue_snapshot_id=topic_queue_snapshot_id,
         selected_model=selected_model or "",
-        run_count=run_count,
-        first_pass_rate=rate,
+        run_count=total_runs,
+        first_pass_rate=completed_rate,
         summary=" ".join(summary_parts),
         suggestions=suggestions,
     )

@@ -312,3 +312,20 @@ def enrich_steps_with_responses(
 def step_executions_payload(db: Session, run_id: str) -> list[dict]:
     steps = [step_execution_to_dict(s) for s in list_step_executions(db, run_id)]
     return enrich_steps_with_responses(db, run_id, steps)
+
+
+def batch_step_executions_payload(db: Session, run_ids: list[str]) -> dict[str, list[dict]]:
+    if not run_ids:
+        return {}
+    rows = (
+        db.query(StepExecution)
+        .filter(StepExecution.run_id.in_(run_ids))
+        .order_by(StepExecution.run_id.asc(), StepExecution.started_at.asc(), StepExecution.id.asc())
+        .all()
+    )
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row.run_id, []).append(step_execution_to_dict(row))
+    for run_id, steps in grouped.items():
+        grouped[run_id] = enrich_steps_with_responses(db, run_id, steps)
+    return grouped

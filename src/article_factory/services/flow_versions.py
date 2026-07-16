@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from article_factory.models import FlowVersion
 from article_factory.services.flow_schema import FlowDefinition, flow_from_dict, flow_to_dict, strip_runtime_overrides
-from article_factory.services.flow_storage import read_flow
+from article_factory.services.flow_storage import read_flow, write_flow
 
 
 def flow_content_hash(flow_dict: dict[str, Any]) -> str:
@@ -52,6 +52,36 @@ def create_flow_version(
         content_hash=digest,
         flow_content=content,
         message=message.strip(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def peek_next_version_number(db: Session, flow_path: str) -> int:
+    return _next_version_number(db, flow_path)
+
+
+def create_improved_flow_version(
+    db: Session,
+    flow_path: str,
+    *,
+    flow: FlowDefinition,
+    source_version_number: int,
+    message: str,
+) -> FlowVersion:
+    """Create a new numbered version from prompt improvement (never dedupes by hash)."""
+    cleaned = strip_runtime_overrides(flow)
+    content = flow_to_dict(cleaned)
+    digest = flow_content_hash(content)
+    version_number = _next_version_number(db, flow_path)
+    row = FlowVersion(
+        flow_path=flow_path,
+        version_number=version_number,
+        content_hash=digest,
+        flow_content=content,
+        message=message.strip() or f"v{version_number}-improved-from-v{source_version_number}",
     )
     db.add(row)
     db.commit()
@@ -129,3 +159,42 @@ def diff_flow_versions(previous: dict[str, Any], current: dict[str, Any]) -> lis
 
 def load_version_flow(row: FlowVersion) -> FlowDefinition:
     return flow_from_dict(dict(row.flow_content or {}))
+
+
+def resolve_flow_for_run(db: Session, run) -> FlowDefinition:
+    """Load the flow definition a run should execute (version snapshot when set)."""
+    flow_path = (getattr(run, "flow_path", None) or "").strip()
+    flow_version_id = getattr(run, "flow_version_id", None)
+    if flow_version_id:
+        version = get_flow_version(db, int(flow_version_id))
+        if version is not None and version.flow_path == flow_path and version.flow_content:
+            return load_version_flow(version)
+    if not flow_path:
+        raise FileNotFoundError("Run has no flow path")
+    return read_flow(flow_path)
+
+
+def resolve_flow_version_for_run(
+    db: Session,
+    flow_path: str,
+    *,
+    flow_version_id: int | None = None,
+) -> FlowVersion:
+    cleaned = flow_path.strip()
+    if flow_version_id is not None:
+        version = get_flow_version(db, flow_version_id)
+        if version is not None and version.flow_path == cleaned:
+            return version
+    latest = get_latest_flow_version(db, cleaned)
+    if latest:
+        return latest
+    return create_flow_version(db, cleaned, message="Auto-created on first run")
+
+
+def apply_version_to_disk(db: Session, version_id: int) -> FlowVersion:
+    version = get_flow_version(db, version_id)
+    if version is None:
+        raise ValueError("Flow version not found")
+    flow = load_version_flow(version)
+    write_flow(version.flow_path, flow)
+    return version

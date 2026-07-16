@@ -11,6 +11,19 @@ from article_factory.services.flow_tool_requirements import collect_flow_tool_re
 from article_factory.services.puller_selection import is_idle_puller, puller_supports_model
 from article_factory.services.runtime_settings import RuntimeSettings
 
+# Showroom checks are informational for writing — only the control plane path blocks runs.
+WRITING_BLOCKER_IDS = frozenset(
+    {
+        "orchestrator",
+        "control_plane_url",
+        "control_plane_reachable",
+        "model",
+        "pullers",
+        "brave_search",
+    }
+)
+SHOWROOM_CHECK_IDS = frozenset({"cms_url", "cms_connection"})
+
 
 def _check(
     check_id: str,
@@ -50,7 +63,7 @@ async def assess_factory_readiness(
     active_run_count: int = 0,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
-    setup_blockers: list[str] = []
+    writing_blockers: list[str] = []
 
     checks.append(
         _check(
@@ -65,7 +78,7 @@ async def assess_factory_readiness(
         )
     )
     if not loop_running:
-        setup_blockers.append("orchestrator")
+        writing_blockers.append("orchestrator")
 
     cp_url = runtime.control_plane_url.strip()
     has_cp_url = bool(cp_url)
@@ -80,7 +93,7 @@ async def assess_factory_readiness(
         )
     )
     if not has_cp_url:
-        setup_blockers.append("control_plane_url")
+        writing_blockers.append("control_plane_url")
 
     cp_reachable = False
     cp_error = ""
@@ -107,7 +120,7 @@ async def assess_factory_readiness(
         )
     )
     if has_cp_url and not cp_reachable:
-        setup_blockers.append("control_plane_reachable")
+        writing_blockers.append("control_plane_reachable")
 
     model = runtime.default_model.strip()
     has_model = bool(model)
@@ -122,7 +135,7 @@ async def assess_factory_readiness(
         )
     )
     if not has_model:
-        setup_blockers.append("model")
+        writing_blockers.append("model")
 
     active_for_model = active_pullers_for_model(pullers, model) if has_model and cp_reachable else []
     idle_for_model = [
@@ -151,7 +164,7 @@ async def assess_factory_readiness(
         )
     )
     if has_model and cp_reachable and not puller_ok:
-        setup_blockers.append("pullers")
+        writing_blockers.append("pullers")
 
     cms_url = runtime.cms_url.strip()
     cms_api_key = runtime.cms_api_key.strip()
@@ -163,31 +176,34 @@ async def assess_factory_readiness(
             "cms_url",
             "Showroom CMS URL",
             cms_configured,
-            cms_url if has_cms_url and has_cms_key else "Set Showroom URL and API key in Settings.",
+            cms_url
+            if has_cms_url and has_cms_key
+            else "Optional for writing — set Showroom URL and API key to publish finished articles.",
             action_label="Open Settings" if not cms_configured else None,
             action_path="/settings" if not cms_configured else None,
         )
     )
-    if not cms_configured:
-        setup_blockers.append("cms_url")
 
     cms_ok = False
-    cms_message = "Configure Showroom URL and API key first."
+    cms_message = "Showroom not configured — finished articles stay in the factory until publish is set up."
     if cms_configured:
         cms_ok, cms_message = await check_cms_connection(cms_url, cms_api_key)
+        if not cms_ok:
+            cms_message = (
+                f"{cms_message} Writing and control-plane tasks are unaffected; "
+                "publish or retry when Showroom is back."
+            )
 
     checks.append(
         _check(
             "cms_connection",
             "Showroom connection",
-            cms_ok,
+            cms_ok if cms_configured else True,
             cms_message,
             action_label="Fix in Settings" if cms_configured and not cms_ok else None,
             action_path="/settings" if cms_configured and not cms_ok else None,
         )
     )
-    if cms_configured and not cms_ok:
-        setup_blockers.append("cms_connection")
 
     tool_requirements = collect_flow_tool_requirements()
     needs_web_search = tool_requirements.get("needs_web_search", False)
@@ -217,7 +233,7 @@ async def assess_factory_readiness(
         )
     )
     if needs_web_search and not brave_configured:
-        setup_blockers.append("brave_search")
+        writing_blockers.append("brave_search")
 
     queued = queue_counts.get("queued", 0)
     topics_ok = queued > 0
@@ -234,7 +250,8 @@ async def assess_factory_readiness(
         )
     )
 
-    setup_complete = len(setup_blockers) == 0
+    writing_ready = len(writing_blockers) == 0
+    can_publish = cms_configured and cms_ok
     processing = active_run_count > 0 or active_run is not None
     running_n = active_run_count if active_run_count > 0 else (1 if active_run else 0)
 
@@ -247,12 +264,16 @@ async def assess_factory_readiness(
             headline = "Writing an article now"
             summary = "The factory is processing a topic through the pipeline stages."
         next_action = {"action_label": "View queue", "action_path": "/queue"}
-    elif not setup_complete:
+    elif not writing_ready:
         phase = "setup_required"
         headline = "Setup required before the factory can write articles"
-        summary = "Complete the items below, then add topics to the queue."
+        summary = "Complete the control plane and model items below, then add topics to the queue."
         next_action = next(
-            (c for c in checks if not c["ok"] and c.get("action_path")),
+            (
+                c
+                for c in checks
+                if not c["ok"] and c.get("action_path") and c["id"] in WRITING_BLOCKER_IDS
+            ),
             {"action_label": "Open Settings", "action_path": "/settings"},
         )
     elif topics_ok:
@@ -263,12 +284,13 @@ async def assess_factory_readiness(
     else:
         phase = "needs_topics"
         headline = "Factory is ready — add topics to start writing"
-        summary = "Control plane, Showroom, and model are configured. Add one or more article topics to the queue."
+        summary = "Control plane and model are configured. Add one or more article topics to the queue."
         next_action = {"action_label": "Add topics", "action_path": "/start-flows"}
 
     return {
-        "setup_complete": setup_complete,
-        "can_write": setup_complete and (processing or topics_ok),
+        "setup_complete": writing_ready,
+        "can_write": writing_ready and (processing or topics_ok),
+        "can_publish": can_publish,
         "phase": phase,
         "headline": headline,
         "summary": summary,
@@ -277,7 +299,11 @@ async def assess_factory_readiness(
             "path": next_action.get("action_path", "/"),
         },
         "checks": checks,
-        "issue_checks": [c for c in checks if not c["ok"] and c["id"] not in {"topics"}],
+        "issue_checks": [
+            c
+            for c in checks
+            if not c["ok"] and c["id"] not in {"topics"} and c["id"] not in SHOWROOM_CHECK_IDS
+        ],
         "available_models": sorted(
             {
                 m

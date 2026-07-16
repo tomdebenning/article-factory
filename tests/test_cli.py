@@ -96,3 +96,72 @@ def test_module_main_entrypoint(tmp_path, monkeypatch) -> None:
     )
     assert result.returncode == 0
     assert "Database initialized" in result.stdout
+
+
+def test_cli_telemetry_rebuild_run(configured_db, monkeypatch) -> None:
+    from article_factory.models import FactoryRun
+    from article_factory.services.flow_storage import create_flow
+    from article_factory.services.flow_versions import create_flow_version
+
+    rel_path, _flow = create_flow(folder="", slug="cli-telemetry", display_name="CLI", step_count=2)
+    db = db_module.SessionLocal()
+    try:
+        version = create_flow_version(db, rel_path, message="v1")
+        db.add(
+            FactoryRun(
+                run_id="run-cli-telemetry",
+                topic_slug="general",
+                flow_path=rel_path,
+                flow_version_id=version.id,
+                status="completed",
+                manifest={"steps": [{"step_key": "step_1"}, {"step_key": "step_2", "content": "VERDICT: ACCEPT"}]},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    with patch.object(sys, "argv", ["article-factory", "telemetry", "rebuild", "--run-id", "run-cli-telemetry"]):
+        from article_factory.__main__ import main
+
+        main()
+
+
+def test_cli_telemetry_rebuild_missing_args(capsys) -> None:
+    with patch.object(sys, "argv", ["article-factory", "telemetry", "rebuild"]):
+        with pytest.raises(SystemExit) as exc:
+            from article_factory.__main__ import main
+
+            main()
+        assert exc.value.code == 2
+
+
+def test_cli_telemetry_rebuild_flow(configured_db) -> None:
+    from article_factory.services.flow_storage import create_flow
+    from article_factory.services.flow_versions import create_flow_version
+
+    rel_path, _flow = create_flow(folder="", slug="cli-flow-tel", display_name="CLI Flow", step_count=2)
+    db = db_module.SessionLocal()
+    try:
+        version = create_flow_version(db, rel_path, message="v1")
+        db.commit()
+        version_id = version.id
+    finally:
+        db.close()
+
+    with patch.object(
+        sys,
+        "argv",
+        [
+            "article-factory",
+            "telemetry",
+            "rebuild",
+            "--flow-path",
+            rel_path,
+            "--flow-version-id",
+            str(version_id),
+        ],
+    ):
+        from article_factory.__main__ import main
+
+        main()

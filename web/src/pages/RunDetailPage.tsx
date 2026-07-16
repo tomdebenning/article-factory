@@ -206,7 +206,9 @@ export default function RunDetailPage() {
             <dd>
               {detail.run.flow_path ? (
                 <Link
-                  to={`/flows/performance?path=${encodeURIComponent(detail.run.flow_path)}`}
+                  to={`/flows/edit?path=${encodeURIComponent(detail.run.flow_path)}${
+                    detail.run.flow_version_id ? `&version_id=${detail.run.flow_version_id}` : ""
+                  }`}
                 >
                   v{detail.run.flow_version_number ?? detail.run.flow_version_id}
                   {detail.run.flow_version_message ? ` — ${detail.run.flow_version_message}` : ""}

@@ -16,6 +16,8 @@ from article_factory.routes.auth import router as auth_router
 from article_factory.routes.flow_queues import router as flow_queues_router
 from article_factory.routes.flows import router as flows_router
 from article_factory.routes.flow_performance import router as flow_performance_router
+from article_factory.routes.telemetry import router as telemetry_router
+from article_factory.routes.prompt_improvement import router as prompt_improvement_router
 from article_factory.routes.personas import router as personas_router
 from article_factory.services.flow_queues import ensure_default_flow_queue
 from article_factory.services.flow_storage import ensure_default_flows
@@ -24,6 +26,7 @@ from article_factory.services.control_plane_heartbeat import control_plane_heart
 from article_factory.services.factory_api_key_cache import warm_factory_api_key_cache
 from article_factory.services.factory_readiness import assess_factory_readiness
 from article_factory.services.showroom_status_sync import showroom_status_loop
+from article_factory.services.prompt_improvement_runner import prompt_improvement_runner
 from article_factory.services.runtime_settings import get_or_create_factory_settings, load_runtime_settings
 
 logger = logging.getLogger(__name__)
@@ -87,6 +90,7 @@ async def lifespan(app: FastAPI):
     await factory_loop.start()
     await control_plane_heartbeat_loop.start()
     await showroom_status_loop.start()
+    await prompt_improvement_runner.start()
     asyncio.create_task(log_startup_readiness())
 
     async def push_showroom_if_busy() -> None:
@@ -123,5 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(flow_queues_router)
     app.include_router(flows_router)
     app.include_router(flow_performance_router)
+    app.include_router(telemetry_router)
+    app.include_router(prompt_improvement_router)
     app.include_router(personas_router)
     return app

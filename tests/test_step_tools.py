@@ -15,6 +15,7 @@ from article_factory.services.step_tools import (
     build_step_tool_definitions,
     build_tool_system_guidance,
     looks_like_tool_refusal,
+    is_review_loop_step,
     normalize_step_enabled_tools,
     resolve_step_tools,
     resolve_workspace_path,
@@ -35,6 +36,20 @@ def test_normalize_step_enabled_tools_defaults() -> None:
 def test_resolve_step_tools_always_enables_all() -> None:
     assert resolve_step_tools(None) == all_step_tools_enabled()
     assert resolve_step_tools({"write_file": False, "web_search": False}) == all_step_tools_enabled()
+
+
+def test_resolve_step_tools_disables_on_review_loop_step() -> None:
+    from article_factory.services.flow_schema import FlowStep, FlowStepCompletion
+
+    review = FlowStep(
+        step_id="review-id",
+        order=2,
+        step_key="review",
+        label="Review",
+        completion=FlowStepCompletion(can_complete=True, can_loop=True, loop_goto_step_id="w"),
+    )
+    assert resolve_step_tools(None, review_step=is_review_loop_step(review)) == normalize_step_enabled_tools(None)
+    assert is_review_loop_step(review) is True
 
 
 def test_build_step_tool_definitions_all_tools() -> None:

@@ -40,6 +40,8 @@ export default function StartFlowsPage() {
   const { options: flowOptions, loading: flowsLoading, reload: reloadFlowOptions } = useFlowSelectOptions();
   const [composer, setComposer] = useState<ComposerState>(() => emptyComposer(""));
   const [composerReady, setComposerReady] = useState(false);
+  const [flowVersions, setFlowVersions] = useState<Array<{ id: number; version_number: number; message?: string }>>([]);
+  const [selectedFlowVersionId, setSelectedFlowVersionId] = useState<number | "">("");
   const [selectedPresetSlug, setSelectedPresetSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -82,6 +84,28 @@ export default function StartFlowsPage() {
           : resolveComposerFlowPath(preferred, flowOptions),
     }));
   }, [composerReady, flowOptions, settings?.default_flow_path, location.state]);
+
+  useEffect(() => {
+    if (!composer.flow_path) {
+      setFlowVersions([]);
+      setSelectedFlowVersionId("");
+      return;
+    }
+    void api
+      .listFlowVersions(composer.flow_path)
+      .then((data) => {
+        setFlowVersions(data.versions);
+        if (data.versions.length > 0) {
+          setSelectedFlowVersionId(data.versions[0].id);
+        } else {
+          setSelectedFlowVersionId("");
+        }
+      })
+      .catch(() => {
+        setFlowVersions([]);
+        setSelectedFlowVersionId("");
+      });
+  }, [composer.flow_path]);
 
   const updateComposer = (patch: Partial<ComposerState>) => {
     setComposer((prev) => ({ ...prev, ...patch }));
@@ -226,6 +250,7 @@ export default function StartFlowsPage() {
       .startFlowQueue({
         name,
         flow_path,
+        flow_version_id: selectedFlowVersionId === "" ? undefined : selectedFlowVersionId,
         topic_slug: composer.topic_slug.trim() || "general",
         default_model: settings.default_model,
         topics,
@@ -316,6 +341,25 @@ export default function StartFlowsPage() {
                 Refresh
               </button>
             </div>
+          </label>
+          <label>
+            Flow version
+            <select
+              value={selectedFlowVersionId}
+              disabled={flowVersions.length === 0}
+              onChange={(e) => setSelectedFlowVersionId(e.target.value ? Number(e.target.value) : "")}
+            >
+              {flowVersions.length === 0 ? (
+                <option value="">No saved versions (uses latest on first run)</option>
+              ) : (
+                flowVersions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    v{version.version_number}
+                    {version.message ? ` — ${version.message}` : ""}
+                  </option>
+                ))
+              )}
+            </select>
           </label>
         </div>
         {settings?.default_flow_path && (

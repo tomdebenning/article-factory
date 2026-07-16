@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from article_factory.cms_client import CmsClient, CmsRequestError
+from article_factory.cms_client import CmsClient, CmsRequestError, best_effort_showroom
 from article_factory.models import CompletedArticle, FactoryRun
 from article_factory.services.article_text import article_has_content, headline_from_markdown
 from article_factory.services.run_attachments import collect_run_workspace_attachments
@@ -69,13 +69,16 @@ async def publish_article_to_showroom(
     db.commit()
 
     result = await cms.post_run_complete(payload)
-    await cms.post_run_event(
-        {
-            "run_id": run.run_id,
-            "topic_slug": run.topic_slug,
-            "event": "run_published",
-            "at": datetime.now(timezone.utc).isoformat(),
-        }
+    await best_effort_showroom(
+        f"run_published event for {run.run_id}",
+        lambda: cms.post_run_event(
+            {
+                "run_id": run.run_id,
+                "topic_slug": run.topic_slug,
+                "event": "run_published",
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
     )
     try:
         await push_showroom_factory_status(db, cms)

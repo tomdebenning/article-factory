@@ -21,3 +21,30 @@ def test_extract_feedback_body() -> None:
 def test_parse_verdict_markdown_bold() -> None:
     text = "Looks good after edits.\n\n---\n\n**VERDICT: ACCEPT**"
     assert parse_verdict(text) == Verdict.ACCEPT
+
+
+def test_parse_verdict_markdown_heading() -> None:
+    text = "Score is 90/100.\n\n---\n\n## VERDICT: ACCEPT"
+    assert parse_verdict(text) == Verdict.ACCEPT
+
+
+def test_parse_verdict_markdown_h3_heading() -> None:
+    text = "Needs work.\n\n### VERDICT: REJECT"
+    assert parse_verdict(text) == Verdict.REJECT
+
+
+def test_parse_verdict_rejected_and_accepted_forms() -> None:
+    text = "Score 52/100.\n\nVERDICT: REJECTED\n\nMore feedback.\n\nVERDICT: REJECT"
+    assert parse_verdict(text) == Verdict.REJECT
+
+    accepted = "Strong draft.\n\nVERDICT: ACCEPTED"
+    assert parse_verdict(accepted) == Verdict.ACCEPT
+
+
+def test_parse_verdict_rejected_before_degenerate_tail() -> None:
+    text = (
+        "ARTICLE REVIEW\n\nAccuracy: 6/30\n\n---\n\nVERDICT: REJECTED\n\n"
+        + "EDITOR FEEDBACK\n\nFix accuracy.\n\n"
+        + ("word " * 5000)
+    )
+    assert parse_verdict(text) == Verdict.REJECT

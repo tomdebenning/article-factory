@@ -28,6 +28,21 @@ def flow_steps_payload(flow_path: str) -> list[dict]:
         logger.debug("Could not load flow steps for %s", cleaned, exc_info=True)
         return []
 
+    return _steps_from_flow(flow)
+
+
+def flow_steps_payload_for_run(db: Session, run: FactoryRun) -> list[dict]:
+    from article_factory.services.flow_versions import resolve_flow_for_run
+
+    try:
+        flow = resolve_flow_for_run(db, run)
+    except Exception:
+        logger.debug("Could not load versioned flow steps for run %s", run.run_id, exc_info=True)
+        return flow_steps_payload(run.flow_path or "")
+    return _steps_from_flow(flow)
+
+
+def _steps_from_flow(flow) -> list[dict]:
     return [
         {
             "step_key": step.step_key,

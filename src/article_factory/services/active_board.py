@@ -4,10 +4,12 @@ from sqlalchemy.orm import Session
 
 from article_factory.models import FactoryRun, FlowQueue, TopicQueueItem
 from article_factory.schemas import RunSummary
-from article_factory.services.flow_steps import flow_steps_payload
+from article_factory.services.flow_queues import DEFAULT_QUEUE_SLUG
+from article_factory.services.flow_steps import flow_steps_payload_for_run
 
 
 def enriched_run_summary(db: Session, run: FactoryRun, *, include_steps: bool = False) -> dict:
+    from article_factory.services.flow_versions import get_flow_version
     from article_factory.services.step_trace import step_executions_payload
 
     item = db.get(TopicQueueItem, run.queue_item_id) if run.queue_item_id else None
@@ -25,7 +27,12 @@ def enriched_run_summary(db: Session, run: FactoryRun, *, include_steps: bool = 
     summary["topic_prompt"] = item.prompt if item else None
     summary["flow_queue_id"] = flow_queue_id
     summary["flow_queue_name"] = queue_name or "Unassigned"
-    summary["flow_steps"] = flow_steps_payload(run.flow_path or "")
+    summary["flow_steps"] = flow_steps_payload_for_run(db, run)
+    if run.flow_version_id:
+        version = get_flow_version(db, run.flow_version_id)
+        if version:
+            summary["flow_version_number"] = version.version_number
+            summary["flow_version_message"] = version.message
     if include_steps:
         summary["steps"] = step_executions_payload(db, run.run_id)
     else:
@@ -35,9 +42,17 @@ def enriched_run_summary(db: Session, run: FactoryRun, *, include_steps: bool = 
 
 def _queue_counts(db: Session, queue_id: int) -> dict[str, int]:
     counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
-    for status, in db.query(TopicQueueItem.status).filter_by(flow_queue_id=queue_id).all():
-        if status in counts:
-            counts[status] += 1
+    queue = db.get(FlowQueue, queue_id)
+    query = db.query(TopicQueueItem.status)
+    if queue is not None and queue.slug == DEFAULT_QUEUE_SLUG:
+        query = query.filter(
+            (TopicQueueItem.flow_queue_id == queue_id) | (TopicQueueItem.flow_queue_id.is_(None))
+        )
+    else:
+        query = query.filter_by(flow_queue_id=queue_id)
+    for status, in query.all():
+        key = status if status in counts else "queued"
+        counts[key] = counts.get(key, 0) + 1
     return counts
 
 
@@ -123,7 +138,15 @@ def build_active_overview(db: Session, *, history_limit: int = 250) -> dict:
         ),
     )
 
-    history = [enriched_run_summary(db, run) for run in history_runs]
+    history = []
+    history_ids = [run.run_id for run in history_runs]
+    from article_factory.services.step_trace import batch_step_executions_payload
+
+    history_steps = batch_step_executions_payload(db, history_ids)
+    for run in history_runs:
+        row = enriched_run_summary(db, run, include_steps=False)
+        row["steps"] = history_steps.get(run.run_id, [])
+        history.append(row)
 
     return {
         "running_groups": running_groups,

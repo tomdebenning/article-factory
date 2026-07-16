@@ -393,6 +393,16 @@ async def _submit_and_wait_for_round(
     raise NoPullerAvailableError(message)
 
 
+def _empty_response_retry_message(step_key: str) -> str:
+    suffix = ""
+    if step_key in {"review", "step_2"}:
+        suffix = " End with a final line: VERDICT: ACCEPT or VERDICT: REJECT."
+    return (
+        f"Your previous attempt for the {step_key} step returned no usable text. "
+        f"Reply again with your complete answer in plain text.{suffix}"
+    )
+
+
 async def execute_step(
     cp: ControlPlaneClient,
     *,
@@ -418,7 +428,7 @@ async def execute_step(
             brave_api_key=brave_search_api_key,
         )
 
-    messages: list[dict[str, Any]] = [
+    initial_messages: list[dict[str, Any]] = [
         {
             "role": "system",
             "content": augment_system_prompt_for_tools(
@@ -428,104 +438,143 @@ async def execute_step(
         },
         {"role": "user", "content": user_content},
     ]
-    round_num = 1
-    turn_count = 0
     total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     final_content = ""
     completed_at: str | None = None
     response_error: str | None = None
     item: dict[str, Any] | None = None
     tools_used: list[dict[str, Any]] = []
-    tool_refusal_nudged = False
+    agent_id = ""
+    conversation_id = ""
+    total_turn_count = 0
+    max_empty_attempts = max(1, settings.step_empty_response_max_attempts)
 
-    def build_task(task_agent_id: str, task_conversation_id: str) -> dict[str, Any]:
-        task: dict[str, Any] = {
-            "agent_id": task_agent_id,
-            "conversation_id": task_conversation_id,
-            "round": round_num,
-            "target_puller": puller or settings.default_puller,
-            "model": model or settings.default_model,
-            "messages": messages,
-            "submitted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        }
-        if tool_defs:
-            task["tools"] = tool_defs
-        return task
-
-    while round_num <= MAX_TOOL_ROUNDS:
-        turn_count += 1
-
-        item, agent_id, conversation_id = await _submit_and_wait_for_round(
-            cp,
-            step_key=step_key,
-            puller=puller,
-            model=model,
-            build_task=build_task,
-            round_num=round_num,
-            run_id=run_id,
-            tracer=tracer,
-        )
-
-        message = (item.get("message") or {}) if isinstance(item.get("message"), dict) else {}
-        content = str(message.get("content") or "")
-        response_error = item.get("error")
-        if response_error:
-            break
-
-        usage = item.get("usage")
-        if usage is not None and not isinstance(usage, dict):
-            usage = dict(usage) if hasattr(usage, "items") else None
-        normalized_usage = normalize_round_usage(
-            usage,
-            messages=messages,
-            assistant_message=message,
-            tools_text=serialize_tools_for_token_estimate(tool_defs) if tool_defs else "",
-        )
-        total_usage = _merge_usage(total_usage, normalized_usage)
-        completed_at = item.get("completed_at")
-
-        tool_calls = message.get("tool_calls")
-        if not tool_calls or not registry:
-            if (
-                registry
-                and not tool_refusal_nudged
-                and step_has_tools(tool_flags)
-                and looks_like_tool_refusal(content)
-            ):
-                messages.append(_assistant_message_dict(message))
-                messages.append({"role": "user", "content": tool_use_nudge_message(tool_flags)})
-                tool_refusal_nudged = True
-                round_num += 1
-                continue
-            final_content = content
-            break
-
-        messages.append(_assistant_message_dict(message))
-        for tool_call in tool_calls:
-            if not isinstance(tool_call, dict):
-                continue
-            fn = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
-            tool_name = str(fn.get("name") or "tool")
-            tool_args = _parse_tool_arguments(fn.get("arguments"))
-            if tracer:
-                tracer.record_tool_start(tool_name, tool_args, round_num=round_num)
-            tool_message = await registry.execute(tool_call)
-            entry = tool_use_entry(
-                tool_name,
-                tool_args,
-                result=str(tool_message.get("content") or ""),
-                round_num=round_num,
+    for empty_attempt in range(1, max_empty_attempts + 1):
+        messages = [dict(message) for message in initial_messages]
+        if empty_attempt > 1:
+            messages.append({"role": "user", "content": _empty_response_retry_message(step_key)})
+            logger.warning(
+                "Step %s returned empty content — retrying attempt %s/%s",
+                step_key,
+                empty_attempt,
+                max_empty_attempts,
             )
             if tracer:
-                tracer.append_tool_use(entry)
-            else:
-                tools_used.append(entry)
-            messages.append(tool_message)
-        round_num += 1
-        final_content = content
+                tracer.record_activity(
+                    f"Retrying after empty response ({empty_attempt}/{max_empty_attempts})",
+                )
+
+        round_num = 1
+        attempt_turn_count = 0
+        tool_refusal_nudged = False
+        final_content = ""
+        response_error = None
+
+        def build_task(task_agent_id: str, task_conversation_id: str) -> dict[str, Any]:
+            task: dict[str, Any] = {
+                "agent_id": task_agent_id,
+                "conversation_id": task_conversation_id,
+                "round": round_num,
+                "target_puller": puller or settings.default_puller,
+                "model": model or settings.default_model,
+                "messages": messages,
+                "submitted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+            if tool_defs:
+                task["tools"] = tool_defs
+            return task
+
+        while round_num <= MAX_TOOL_ROUNDS:
+            attempt_turn_count += 1
+
+            item, agent_id, conversation_id = await _submit_and_wait_for_round(
+                cp,
+                step_key=step_key,
+                puller=puller,
+                model=model,
+                build_task=build_task,
+                round_num=round_num,
+                run_id=run_id,
+                tracer=tracer,
+            )
+
+            message = (item.get("message") or {}) if isinstance(item.get("message"), dict) else {}
+            content = str(message.get("content") or "")
+            response_error = item.get("error")
+            if response_error:
+                break
+
+            usage = item.get("usage")
+            if usage is not None and not isinstance(usage, dict):
+                usage = dict(usage) if hasattr(usage, "items") else None
+            normalized_usage = normalize_round_usage(
+                usage,
+                messages=messages,
+                assistant_message=message,
+                tools_text=serialize_tools_for_token_estimate(tool_defs) if tool_defs else "",
+            )
+            total_usage = _merge_usage(total_usage, normalized_usage)
+            completed_at = item.get("completed_at")
+
+            tool_calls = message.get("tool_calls")
+            if not tool_calls or not registry:
+                if (
+                    registry
+                    and not tool_refusal_nudged
+                    and step_has_tools(tool_flags)
+                    and looks_like_tool_refusal(content)
+                ):
+                    messages.append(_assistant_message_dict(message))
+                    messages.append({"role": "user", "content": tool_use_nudge_message(tool_flags)})
+                    tool_refusal_nudged = True
+                    round_num += 1
+                    continue
+                final_content = content
+                break
+
+            messages.append(_assistant_message_dict(message))
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                fn = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+                tool_name = str(fn.get("name") or "tool")
+                tool_args = _parse_tool_arguments(fn.get("arguments"))
+                if tracer:
+                    tracer.record_tool_start(tool_name, tool_args, round_num=round_num)
+                tool_message = await registry.execute(tool_call)
+                entry = tool_use_entry(
+                    tool_name,
+                    tool_args,
+                    result=str(tool_message.get("content") or ""),
+                    round_num=round_num,
+                )
+                if tracer:
+                    tracer.append_tool_use(entry)
+                else:
+                    tools_used.append(entry)
+                messages.append(tool_message)
+            round_num += 1
+            final_content = content
+
+        total_turn_count += attempt_turn_count
+
+        if response_error:
+            break
+        if str(final_content or "").strip():
+            break
 
     if item is None and not response_error:
         message = f"Step {step_key} ended without a control plane response"
+        if tracer:
+            tracer.mark_failed(message)
+        raise RuntimeError(message)
+
+    if not response_error and not str(final_content or "").strip():
+        message = (
+            f"Step {step_key} returned empty content after {total_turn_count} turn(s) "
+            f"across {max_empty_attempts} attempt(s). "
+            "The model may have used tools without producing a final answer."
+        )
         if tracer:
             tracer.mark_failed(message)
         raise RuntimeError(message)
@@ -539,7 +588,7 @@ async def execute_step(
                 usage=total_usage,
                 duration_ms=duration_ms_between(tracer.execution.started_at),
                 tools_used=tools_used,
-                turns=turn_count,
+                turns=total_turn_count,
             )
 
     return {
@@ -550,7 +599,7 @@ async def execute_step(
         "agent_id": agent_id,
         "conversation_id": conversation_id,
         "tools_used": tools_used,
-        "turns": turn_count,
+        "turns": total_turn_count,
     }
 
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import RunProgressPanel from "../components/RunProgressPanel";
-import { api, QUEUE_STATUS_LABEL, type ActiveOverview, type RunSummary } from "../api";
+import { api, QUEUE_STATUS_LABEL, type ActiveOverview, type RunningGroup, type RunSummary } from "../api";
 import {
   formatRunTime,
   groupHistoryRuns,
@@ -107,13 +107,17 @@ function RunRow({
 function RunningTab({
   groups,
   runActionId,
+  queueActionId,
   onStop,
   onDelete,
+  onStopAndClearQueue,
 }: {
   groups: ActiveOverview["running_groups"];
   runActionId: string | null;
+  queueActionId: string | null;
   onStop: (run: RunSummary) => void;
   onDelete: (run: RunSummary) => void;
+  onStopAndClearQueue: (group: RunningGroup) => void;
 }) {
   if (groups.length === 0) {
     return (
@@ -128,6 +132,8 @@ function RunningTab({
     <div className="active-running-list">
       {groups.map((group) => {
         const groupKey = `${group.queue_id ?? "none"}:${group.flow_path}:${group.model}`;
+        const groupActionKey = `queue:${group.queue_id ?? "none"}:${group.flow_path}`;
+        const canClearQueue = group.queue_id != null && (group.running_count > 0 || group.queued_count > 0);
         return (
           <details key={groupKey} className="disclosure-box active-group-box" open={group.running_count > 0 || undefined}>
             <summary className="disclosure-box-summary active-group-summary">
@@ -152,6 +158,18 @@ function RunningTab({
               </span>
             </summary>
             <div className="disclosure-box-body active-group-body">
+              {canClearQueue && (
+                <div className="active-group-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={queueActionId === groupActionKey}
+                    onClick={() => onStopAndClearQueue(group)}
+                  >
+                    {queueActionId === groupActionKey ? "Stopping…" : "Clear queue & stop running"}
+                  </button>
+                </div>
+              )}
               {group.runs.length === 0 ? (
                 <p className="hint">Topics are queued — waiting for an idle puller.</p>
               ) : (
@@ -249,6 +267,7 @@ export default function QueuePage() {
     (location.state as { message?: string } | null)?.message ?? null,
   );
   const [runActionId, setRunActionId] = useState<string | null>(null);
+  const [queueActionId, setQueueActionId] = useState<string | null>(null);
 
   const setTab = (next: TabId) => {
     if (next === "running") {
@@ -327,6 +346,34 @@ export default function QueuePage() {
       .finally(() => setRunActionId(null));
   };
 
+  const stopAndClearQueue = (group: RunningGroup) => {
+    if (group.queue_id == null) {
+      return;
+    }
+    const parts = [];
+    if (group.running_count > 0) {
+      parts.push(`stop ${group.running_count} running article(s)`);
+    }
+    if (group.queued_count > 0) {
+      parts.push(`clear ${group.queued_count} queued topic(s)`);
+    }
+    const summary = parts.join(" and ");
+    if (!window.confirm(`Clear queue "${group.queue_name}" and ${summary}?`)) {
+      return;
+    }
+    const groupActionKey = `queue:${group.queue_id}:${group.flow_path}`;
+    setQueueActionId(groupActionKey);
+    setError(null);
+    void api
+      .stopAndClearFlowQueue(group.queue_id)
+      .then((result) => {
+        setMessage(result.message);
+        reload();
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setQueueActionId(null));
+  };
+
   return (
     <section className="card active-page">
       <h2>Active</h2>
@@ -377,8 +424,10 @@ export default function QueuePage() {
           <RunningTab
             groups={overview?.running_groups ?? []}
             runActionId={runActionId}
+            queueActionId={queueActionId}
             onStop={stopRun}
             onDelete={deleteRun}
+            onStopAndClearQueue={stopAndClearQueue}
           />
         ) : (
           <HistoryTab days={historyDays} runActionId={runActionId} onDelete={deleteRun} />

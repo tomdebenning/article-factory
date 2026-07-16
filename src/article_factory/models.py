@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from article_factory.db import Base
@@ -22,6 +22,7 @@ class FlowQueue(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(128))
     flow_path: Mapped[str] = mapped_column(String(256), default="sports/standard-4-step.flow.json")
+    flow_version_id: Mapped[int | None] = mapped_column(ForeignKey("flow_versions.id"), nullable=True)
     topic_slug: Mapped[str] = mapped_column(String(64), default="general")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     dispatch_order: Mapped[int] = mapped_column(Integer, default=100)
@@ -130,6 +131,21 @@ class TopicQueueSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class RunErrorTag(Base):
+    """Manual error classification override and note for a factory run."""
+
+    __tablename__ = "run_error_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    error_group: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class PromptAnalysis(Base):
     """Stored result of a manual Analyze flow run."""
 
@@ -211,3 +227,189 @@ class StepExecution(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pulled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RunTelemetry(Base):
+    """Run-level performance and quality telemetry (derived from stored runs)."""
+
+    __tablename__ = "run_telemetry"
+    __table_args__ = (
+        Index("ix_run_telemetry_flow_path_version", "flow_path", "flow_version_id"),
+        Index("ix_run_telemetry_selected_model", "selected_model"),
+        Index("ix_run_telemetry_run_status", "run_status"),
+        Index("ix_run_telemetry_started_at", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    flow_path: Mapped[str] = mapped_column(String(256), index=True)
+    flow_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    topic_slug: Mapped[str] = mapped_column(String(64), default="")
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    topic_queue_snapshot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selected_model: Mapped[str] = mapped_column(String(128), default="")
+    selected_puller: Mapped[str] = mapped_column(String(128), default="")
+    run_status: Mapped[str] = mapped_column(String(32), default="")
+    success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    accepted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    first_pass_accept: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    iteration_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    draft_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    initial_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    highest_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lowest_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_change: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    regression_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    no_progress_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_llm_calls: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wall_clock_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    termination_reason: Mapped[str] = mapped_column(String(32), default="unknown")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telemetry_warning_count: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    final_article_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class IterationTelemetry(Base):
+    __tablename__ = "iteration_telemetry"
+    __table_args__ = (
+        UniqueConstraint("run_id", "attempt_number", "iteration_number", name="uq_iteration_telemetry"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    iteration_number: Mapped[int] = mapped_column(Integer)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    writer_step_execution_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reviewer_step_execution_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    writer_step_key: Mapped[str] = mapped_column(String(32), default="")
+    reviewer_step_key: Mapped[str] = mapped_column(String(32), default="")
+    writer_model: Mapped[str] = mapped_column(String(128), default="")
+    reviewer_model: Mapped[str] = mapped_column(String(128), default="")
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    accepted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    total_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    writer_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reviewer_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    required_change_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fixed_issue_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    partially_fixed_issue_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    not_fixed_issue_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    regressed_issue_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    structured_review_valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    parse_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    writer_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class CriterionTelemetry(Base):
+    __tablename__ = "criterion_telemetry"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "attempt_number",
+            "iteration_number",
+            "criterion_key",
+            name="uq_criterion_telemetry",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    iteration_number: Mapped[int] = mapped_column(Integer)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    criterion_key: Mapped[str] = mapped_column(String(64))
+    criterion_label: Mapped[str] = mapped_column(String(128), default="")
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ReviewIssueTelemetry(Base):
+    __tablename__ = "review_issue_telemetry"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    iteration_number: Mapped[int] = mapped_column(Integer)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1)
+    issue_number: Mapped[int] = mapped_column(Integer, default=1)
+    category: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="unknown")
+    problem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    why_it_loses_points: Mapped[str | None] = mapped_column(Text, nullable=True)
+    required_change: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class PromptImprovementJob(Base):
+    """Background job that analyzes telemetry and creates an improved flow version."""
+
+    __tablename__ = "prompt_improvement_jobs"
+    __table_args__ = (
+        Index("ix_prompt_improvement_jobs_flow_version", "flow_path", "source_flow_version_id"),
+        Index("ix_prompt_improvement_jobs_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_path: Mapped[str] = mapped_column(String(256), index=True)
+    source_flow_version_id: Mapped[int] = mapped_column(ForeignKey("flow_versions.id"), index=True)
+    scope: Mapped[str] = mapped_column(String(16), default="step")
+    target_step_key: Mapped[str] = mapped_column(String(32), default="")
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    progress_stage: Mapped[str] = mapped_column(String(64), default="")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    selected_model: Mapped[str] = mapped_column(String(128), default="")
+    selected_puller: Mapped[str] = mapped_column(String(128), default="")
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+    result_flow_version_id: Mapped[int | None] = mapped_column(ForeignKey("flow_versions.id"), nullable=True)
+    report_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PromptImprovementReport(Base):
+    """Stored LLM analysis used to create an improved flow version."""
+
+    __tablename__ = "prompt_improvement_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("prompt_improvement_jobs.id"), index=True)
+    flow_path: Mapped[str] = mapped_column(String(256), index=True)
+    source_flow_version_id: Mapped[int] = mapped_column(Integer, index=True)
+    result_flow_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scope: Mapped[str] = mapped_column(String(16), default="step")
+    target_step_key: Mapped[str] = mapped_column(String(32), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    actionable_items: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    detailed_report: Mapped[str] = mapped_column(Text, default="")
+    example_runs: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    prompt_changes: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    selected_model: Mapped[str] = mapped_column(String(128), default="")
+    selected_puller: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

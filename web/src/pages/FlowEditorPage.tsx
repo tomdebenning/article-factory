@@ -46,7 +46,11 @@ export default function FlowEditorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const path = searchParams.get("path") || "";
+  const versionIdParam = searchParams.get("version_id");
+  const versionId = versionIdParam ? Number(versionIdParam) : null;
   const [flow, setFlow] = useState<FlowDefinition | null>(null);
+  const [versionLabel, setVersionLabel] = useState<string | null>(null);
+  const [readOnlyVersion, setReadOnlyVersion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -54,17 +58,35 @@ export default function FlowEditorPage() {
 
   useEffect(() => {
     if (!path) return;
+    if (versionId && Number.isFinite(versionId)) {
+      void api
+        .getFlowVersionDetail(versionId)
+        .then((data) => {
+          if (data.version.flow_path !== path) {
+            throw new Error("Version does not match this flow path");
+          }
+          setFlow(data.version.flow_content);
+          setVersionLabel(
+            `v${data.version.version_number}${data.version.message ? ` — ${data.version.message}` : ""}`,
+          );
+          setReadOnlyVersion(true);
+        })
+        .catch((e: Error) => setError(e.message));
+      return;
+    }
+    setReadOnlyVersion(false);
+    setVersionLabel(null);
     void api
       .getFlow(path)
       .then((data) => setFlow(data.flow))
       .catch((e: Error) => setError(e.message));
-  }, [path]);
+  }, [path, versionId]);
 
   const steps = useMemo(() => (flow ? [...flow.steps].sort((a, b) => a.order - b.order) : []), [flow]);
   const earlierSteps = (index: number) => steps.slice(0, index);
 
   const updateStep = (stepId: string, patch: Partial<FlowStep>) => {
-    if (!flow) return;
+    if (!flow || readOnlyVersion) return;
     setFlow({
       ...flow,
       steps: flow.steps.map((step) => (step.step_id === stepId ? { ...step, ...patch } : step)),
@@ -111,7 +133,7 @@ export default function FlowEditorPage() {
   };
 
   const save = () => {
-    if (!flow || !path) return;
+    if (!flow || !path || readOnlyVersion) return;
     const payload = {
       ...flow,
       steps: normalizeLastStepCompletion(reorderSteps(steps)),
@@ -172,6 +194,34 @@ export default function FlowEditorPage() {
         </div>
       </div>
       <h2>{flow.display_name}</h2>
+      {readOnlyVersion && versionId && (
+        <div className="flow-template-banner">
+          <strong>Viewing saved version {versionLabel}</strong>
+          <p className="hint">
+            This is a read-only snapshot from version history. Apply it to the on-disk flow file to edit or run from
+            the file copy.
+          </p>
+          <button
+            type="button"
+            className="primary"
+            disabled={saving}
+            onClick={() => {
+              setSaving(true);
+              setError(null);
+              void api
+                .applyFlowVersion(versionId)
+                .then((result) => {
+                  setMessage(result.message);
+                  navigate(`/flows/edit?path=${encodeURIComponent(path)}`);
+                })
+                .catch((e: Error) => setError(e.message))
+                .finally(() => setSaving(false));
+            }}
+          >
+            {saving ? "Applying…" : "Apply to flow file"}
+          </button>
+        </div>
+      )}
       <p className="hint">
         <code>{path}</code> · Templates: {"{{topic}}"}, {"{{feedback}}"}, {"{{step_key}}"} (e.g. {"{{writer}}"}).
         Review steps should end with <code>VERDICT: ACCEPT</code> or <code>VERDICT: REJECT</code>.
@@ -432,7 +482,7 @@ export default function FlowEditorPage() {
         <button type="button" className="secondary" onClick={addStep}>
           Add step
         </button>
-        <button type="button" className="primary" disabled={saving} onClick={save}>
+        <button type="button" className="primary" disabled={saving || readOnlyVersion} onClick={save}>
           {saving ? "Saving…" : "Save flow"}
         </button>
       </div>

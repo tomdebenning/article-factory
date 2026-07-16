@@ -6,6 +6,7 @@ import ArticleDetailPage from "./pages/ArticleDetailPage";
 import DashboardPage from "./pages/DashboardPage";
 import FlowCreatePage from "./pages/FlowCreatePage";
 import FlowEditorPage from "./pages/FlowEditorPage";
+import FlowBatchComparisonPage from "./pages/FlowBatchComparisonPage";
 import FlowPerformancePage from "./pages/FlowPerformancePage";
 import FlowsPage from "./pages/FlowsPage";
 import PersonasPage from "./pages/PersonasPage";
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/flows/new" element={<FlowCreatePage />} />
           <Route path="/flows/edit" element={<FlowEditorPage />} />
           <Route path="/flows/performance" element={<FlowPerformancePage />} />
+          <Route path="/flows/batch" element={<FlowBatchComparisonPage />} />
           <Route path="/personas" element={<PersonasPage />} />
           <Route path="/prompts/:topicSlug" element={<PromptsPage />} />
           <Route path="/runs/:runId" element={<RunDetailPage />} />

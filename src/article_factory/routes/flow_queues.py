@@ -20,6 +20,7 @@ from article_factory.services.flow_queues import (
     ensure_default_flow_queue,
     flow_queue_payload,
     list_flow_queues,
+    stop_and_clear_flow_queue,
     update_flow_queue,
 )
 from article_factory.services.queue_presets import (
@@ -98,6 +99,7 @@ def start_flow_queue(body: FlowQueueStartBody, db: Session = Depends(get_db)) ->
                 flow_path=flow_path,
                 topic_slug=body.topic_slug,
                 enabled=body.enabled,
+                flow_version_id=body.flow_version_id,
             )
         else:
             queue = create_flow_queue(
@@ -107,6 +109,8 @@ def start_flow_queue(body: FlowQueueStartBody, db: Session = Depends(get_db)) ->
                 topic_slug=body.topic_slug,
                 slug=body.preset_slug,
             )
+            if body.flow_version_id:
+                queue.flow_version_id = body.flow_version_id
             if not body.enabled:
                 queue.enabled = False
     except LookupError as exc:
@@ -197,6 +201,14 @@ def remove_flow_queue(queue_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{queue_id}/stop-and-clear")
+async def post_flow_queue_stop_and_clear(queue_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        return await stop_and_clear_flow_queue(db, queue_id=queue_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/{queue_id}/items")

@@ -18,3 +18,10 @@ export function modelsFromActivePullers(pullers: PullerInfo[]): string[] {
 export function activePullers(pullers: PullerInfo[]): PullerInfo[] {
   return pullers.filter(isActivePuller);
 }
+
+export function pullersForModel(pullers: PullerInfo[], model: string): PullerInfo[] {
+  if (!model.trim()) return [];
+  return activePullers(pullers).filter(
+    (puller) => puller.supported_models.length === 0 || puller.supported_models.includes(model),
+  );
+}

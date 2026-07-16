@@ -8,41 +8,18 @@ from article_factory.models import FactoryRun, FlowVersion, TopicQueueSnapshot
 from article_factory.services.flow_schema import FlowDefinition
 from article_factory.services.flow_storage import read_flow
 from article_factory.services.flow_versions import load_version_flow
+from article_factory.services.run_error_classification import (
+    load_manual_error_tags,
+    resolve_run_error_group,
+    step_errors_for_run,
+)
+from article_factory.services.run_turn_metrics import review_cycles_for_run, step_turns_for_run, turn_metrics_for_runs
 from article_factory.services.topic_queue_snapshots import snapshot_to_dict
+from article_factory.services.turn_outcome_charts import build_turn_outcome_charts
 from article_factory.services.verdict import Verdict, parse_verdict
 
 
-def resolve_gate_config(flow: FlowDefinition) -> tuple[str | None, list[str]]:
-    if flow.performance and flow.performance.gate_step_key:
-        gate_key = flow.performance.gate_step_key.strip()
-        producers = list(flow.performance.producer_step_keys or [])
-        if gate_key and not producers:
-            producers = _default_producer_keys(flow, gate_key)
-        return gate_key or None, producers
-
-    steps = sorted(flow.steps, key=lambda step: step.order)
-    if not steps:
-        return None, []
-
-    last = steps[-1]
-    completion = last.completion
-    if not completion or not completion.can_loop:
-        return None, []
-
-    gate_key = last.step_key
-    goto_id = completion.loop_goto_step_id
-    if not goto_id:
-        return gate_key, [steps[0].step_key]
-
-    goto_order = next((step.order for step in steps if step.step_id == goto_id), 1)
-    producer_keys = [step.step_key for step in steps if step.order >= goto_order]
-    return gate_key, producer_keys
-
-
-def _default_producer_keys(flow: FlowDefinition, gate_key: str) -> list[str]:
-    steps = sorted(flow.steps, key=lambda step: step.order)
-    gate_order = next((step.order for step in steps if step.step_key == gate_key), len(steps))
-    return [step.step_key for step in steps if step.order <= gate_order]
+from article_factory.services.flow_roles import resolve_gate_config  # noqa: F401 — re-exported
 
 
 def compute_first_pass_accept(flow: FlowDefinition, step_records: list[dict[str, Any]]) -> bool:
@@ -82,18 +59,24 @@ def apply_run_performance(db: Session, run: FactoryRun, step_records: list[dict[
 
 def _aggregate_row(runs: list[FactoryRun]) -> dict[str, Any]:
     completed = [run for run in runs if run.status == "completed"]
-    with_metric = [run for run in completed if run.first_pass_accept is not None]
-    first_pass = sum(1 for run in with_metric if run.first_pass_accept)
+    first_pass = sum(1 for run in completed if run.first_pass_accept is True)
     tokens = 0
     for run in completed:
         stats = (run.manifest or {}).get("stats") or {}
         tokens += int(stats.get("total_tokens") or 0)
+    run_total = len(runs)
+    completed_total = len(completed)
     return {
-        "run_count": len(runs),
-        "completed_count": len(completed),
+        "run_count": run_total,
+        "completed_count": completed_total,
+        "completion_rate": (completed_total / run_total) if run_total else None,
         "first_pass_count": first_pass,
-        "first_pass_rate": (first_pass / len(with_metric)) if with_metric else None,
-        "avg_tokens": (tokens / len(completed)) if completed else None,
+        "first_pass_yield_rate": (first_pass / run_total) if run_total else None,
+        "first_pass_completed_rate": (first_pass / completed_total) if completed_total else None,
+        # Backwards-compatible alias: first-pass share among completed runs
+        "first_pass_rate": (first_pass / completed_total) if completed_total else None,
+        "first_pass_scored_count": completed_total,
+        "avg_tokens": (tokens / completed_total) if completed_total else None,
     }
 
 
@@ -115,6 +98,12 @@ def aggregate_performance(
 
     runs = query.order_by(FactoryRun.started_at.desc()).all()
     overall = _aggregate_row(runs)
+    overall.update(turn_metrics_for_runs(runs, db))
+    overall["failure_count"] = sum(1 for run in runs if run.status == "failed")
+    overall["failure_rate"] = (overall["failure_count"] / len(runs)) if runs else None
+    manual_tags = load_manual_error_tags(db, [run.run_id for run in runs])
+    overall["error_groups"] = _error_group_summary(runs, db, manual_tags)
+    overall["turn_charts"] = build_turn_outcome_charts(runs, db)
 
     by_version: dict[int, dict[str, Any]] = {}
     for run in runs:
@@ -145,16 +134,63 @@ def aggregate_performance(
             {
                 "topic_queue_snapshot_id": snapshot_id or None,
                 **_aggregate_row(queue_runs),
+                **turn_metrics_for_runs(queue_runs, db),
+                "failure_count": sum(1 for run in queue_runs if run.status == "failed"),
                 "queue_name": _snapshot_label(db, snapshot_id),
             }
             for snapshot_id, queue_runs in sorted(by_queue.items(), key=lambda item: item[0], reverse=True)
         ],
+        "batches": list_batches_for_flow(
+            db,
+            flow_path=flow_path,
+            flow_version_id=flow_version_id,
+            selected_model=selected_model,
+        ),
         "by_model": [
             {"model": model, **_aggregate_row(model_runs)}
             for model, model_runs in sorted(by_model.items(), key=lambda item: item[0])
         ],
-        "runs": [_run_summary(run) for run in runs[:100]],
+        "runs": [_run_summary(run, db, manual_tags) for run in runs[:100]],
     }
+
+
+def _error_group_summary(
+    runs: list[FactoryRun],
+    db: Session,
+    manual_tags: dict[str, Any],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, int] = {}
+    for run in runs:
+        info = resolve_run_error_group(
+            run,
+            manual_tags=manual_tags,
+            step_errors=step_errors_for_run(db, run.run_id) if run.status == "failed" else None,
+        )
+        group = str(info["error_group"])
+        grouped[group] = grouped.get(group, 0) + 1
+    from article_factory.services.run_error_classification import error_group_label
+
+    return [
+        {"error_group": group, "error_group_label": error_group_label(group), "count": count}
+        for group, count in sorted(grouped.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
+def list_batches_for_flow(
+    db: Session,
+    *,
+    flow_path: str,
+    flow_version_id: int | None = None,
+    selected_model: str | None = None,
+) -> list[dict[str, Any]]:
+    from article_factory.services.batch_comparison import list_batches_for_flow_version
+
+    return list_batches_for_flow_version(
+        db,
+        flow_path=flow_path,
+        flow_version_id=flow_version_id,
+        selected_model=selected_model,
+    )
 
 
 def _snapshot_label(db: Session, snapshot_id: int) -> str | None:
@@ -166,9 +202,9 @@ def _snapshot_label(db: Session, snapshot_id: int) -> str | None:
     return row.queue_name or row.queue_slug or f"Topic queue #{snapshot_id}"
 
 
-def _run_summary(run: FactoryRun) -> dict[str, Any]:
+def _run_summary(run: FactoryRun, db: Session | None = None, manual_tags: dict[str, Any] | None = None) -> dict[str, Any]:
     production = (run.manifest or {}).get("production") or {}
-    return {
+    payload: dict[str, Any] = {
         "run_id": run.run_id,
         "topic_slug": run.topic_slug,
         "status": run.status,
@@ -182,6 +218,17 @@ def _run_summary(run: FactoryRun) -> dict[str, Any]:
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
     }
+    if db is not None:
+        payload["review_rounds"] = review_cycles_for_run(run, db)
+        payload["review_cycles"] = payload["review_rounds"]
+        payload["total_step_turns"] = step_turns_for_run(db, run)["total_step_turns"]
+        error_info = resolve_run_error_group(
+            run,
+            manual_tags=manual_tags or {},
+            step_errors=step_errors_for_run(db, run.run_id) if run.status == "failed" else None,
+        )
+        payload.update(error_info)
+    return payload
 
 
 def list_topic_queues_for_flow(db: Session, flow_path: str) -> list[dict[str, Any]]:

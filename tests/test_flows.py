@@ -171,3 +171,125 @@ def test_flow_move_out_of_templates(client, api_headers) -> None:
         json={"path": "promoted/my-single-writer.flow.json", "folder": "_templates", "slug": "nope"},
     )
     assert into_templates.status_code == 400
+
+
+def test_flow_folders_and_delete(client, api_headers) -> None:
+    created = client.post(
+        "/api/flows/folders",
+        headers=api_headers,
+        json={"path": "scratch/nested"},
+    )
+    assert created.status_code == 200
+    assert created.json()["path"] == "scratch/nested"
+
+    duplicate = client.post(
+        "/api/flows/folders",
+        headers=api_headers,
+        json={"path": "scratch/nested"},
+    )
+    assert duplicate.status_code == 409
+
+    flow = client.post(
+        "/api/flows/create",
+        headers=api_headers,
+        json={
+            "folder": "scratch/nested",
+            "slug": "temp-flow",
+            "display_name": "Temp",
+            "step_count": 1,
+        },
+    )
+    assert flow.status_code == 200
+    path = flow.json()["path"]
+
+    listing = client.get("/api/flows/list", headers=api_headers, params={"path": "scratch/nested"})
+    assert listing.status_code == 200
+    assert any(item["slug"] == "temp-flow" for item in listing.json()["flows"])
+
+    deleted = client.delete("/api/flows/file", headers=api_headers, params={"path": path})
+    assert deleted.status_code == 200
+
+    missing = client.get("/api/flows/file", headers=api_headers, params={"path": path})
+    assert missing.status_code == 404
+
+
+def test_flow_delete_folder_requires_empty(client, api_headers) -> None:
+    client.post(
+        "/api/flows/create",
+        headers=api_headers,
+        json={"folder": "to-delete", "slug": "inside", "display_name": "Inside", "step_count": 1},
+    )
+    blocked = client.delete("/api/flows/folders", headers=api_headers, params={"path": "to-delete"})
+    assert blocked.status_code == 400
+
+    client.delete("/api/flows/file", headers=api_headers, params={"path": "to-delete/inside.flow.json"})
+    removed = client.delete("/api/flows/folders", headers=api_headers, params={"path": "to-delete"})
+    assert removed.status_code == 200
+
+
+def test_flow_move_updates_default_path_and_queue_items(client, api_headers, configured_db) -> None:
+    from article_factory.db import SessionLocal
+    from article_factory.models import TopicQueueItem
+    from article_factory.services.runtime_settings import update_factory_settings
+
+    db = SessionLocal()
+    try:
+        update_factory_settings(
+            db,
+            {
+                "control_plane_url": "http://cp.test",
+                "cms_url": "",
+                "cms_api_key": "",
+                "default_puller": "",
+                "default_model": "test-model",
+                "default_flow_path": "move-test/original.flow.json",
+            },
+        )
+        client.post(
+            "/api/flows/create",
+            headers=api_headers,
+            json={"folder": "move-test", "slug": "original", "display_name": "Original", "step_count": 1},
+        )
+        db.add(
+            TopicQueueItem(
+                topic_slug="general",
+                flow_path="move-test/original.flow.json",
+                prompt="Queued",
+                status="queued",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    moved = client.post(
+        "/api/flows/move",
+        headers=api_headers,
+        json={"path": "move-test/original.flow.json", "folder": "move-test", "slug": "renamed"},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["path"] == "move-test/renamed.flow.json"
+
+    db = SessionLocal()
+    try:
+        item = db.query(TopicQueueItem).filter_by(prompt="Queued").one()
+        assert item.flow_path == "move-test/renamed.flow.json"
+    finally:
+        db.close()
+
+
+def test_flow_errors(client, api_headers) -> None:
+    missing = client.get("/api/flows/file", headers=api_headers, params={"path": "missing.flow.json"})
+    assert missing.status_code == 404
+
+    bad_template = client.post(
+        "/api/flows/from-template",
+        headers=api_headers,
+        json={
+            "template_path": "not-a-template.flow.json",
+            "folder": "",
+            "slug": "x",
+            "display_name": "X",
+        },
+    )
+    assert bad_template.status_code in {400, 404}

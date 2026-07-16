@@ -65,7 +65,7 @@ export default function StepTimeline({ steps }: { steps: StepView[] }) {
                 {(step.status === "completed" || toolCount > 0) && stepTurns(step) > 0 ? (
                   <span>turns: {stepTurns(step)}</span>
                 ) : null}
-                {inFlight && toolCount > 0 ? <span>tools: {toolCount}</span> : null}
+                {toolCount > 0 ? <span>tools: {toolCount}</span> : null}
               </div>
               {step.conversation_id && (
                 <div className="step-timeline-meta">

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -213,3 +213,145 @@ async def test_web_fetch_tool_executes() -> None:
         )
     assert "Fetched content" in result["content"]
     assert result["name"] == "web_fetch"
+
+
+def test_validate_fetch_url_empty_and_invalid() -> None:
+    with pytest.raises(ValueError, match="required"):
+        validate_fetch_url("   ")
+    with pytest.raises(ValueError, match="invalid URL"):
+        validate_fetch_url("http:///no-host")
+
+
+def test_hostname_blocked_variants() -> None:
+    assert _hostname_blocked("localhost") is True
+    assert _hostname_blocked("10.0.0.1") is True
+    assert _hostname_blocked("192.168.1.1") is True
+    assert _hostname_blocked("host.local") is True
+    assert _hostname_blocked("example.com") is False
+
+
+def test_validate_fetch_url_accepts_public_host() -> None:
+    assert validate_fetch_url("https://example.com/path") == "https://example.com/path"
+
+
+def test_truncate_text() -> None:
+    text, truncated = truncate_text("hello", 10)
+    assert text == "hello"
+    assert truncated is False
+    short, was_truncated = truncate_text("abcdefghijklmnop", 5)
+    assert was_truncated is True
+    assert short.startswith("abcde")
+    assert "[truncated]" in short
+
+
+def test_format_fetch_result_truncated_and_content_type() -> None:
+    formatted = format_fetch_result(
+        {
+            "url": "https://example.com",
+            "final_url": "https://example.com/final",
+            "content_type": "text/plain",
+            "truncated": True,
+            "text": "Body",
+        }
+    )
+    assert "Content-Type: text/plain" in formatted
+    assert "truncated" in formatted.lower()
+    assert "Body" in formatted
+
+
+def test_format_fetch_result_no_text() -> None:
+    formatted = format_fetch_result({"url": "https://example.com", "final_url": "https://example.com"})
+    assert "(no readable text)" in formatted
+
+
+class _FakeStreamResponse:
+    def __init__(self, *, body: bytes, final_url: str, content_type: str = "text/html", charset: str = "utf-8") -> None:
+        self._body = body
+        self.url = final_url
+        self.status_code = 200
+        self.headers = {"content-type": content_type}
+        self.charset_encoding = charset
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def aiter_bytes(self):
+        yield self._body
+
+
+class _FakeStreamContext:
+    def __init__(self, response: _FakeStreamResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *args):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_fetch_web_page_success() -> None:
+    body = b"<html><title>Page Title</title><body><p>Hello world</p></body></html>"
+    mock_http = AsyncMock()
+    mock_http.stream = MagicMock(
+        return_value=_FakeStreamContext(_FakeStreamResponse(body=body, final_url="https://example.com/page"))
+    )
+    mock_http.aclose = AsyncMock()
+
+    result = await fetch_web_page("https://example.com", client=mock_http)
+    assert result["title"] == "Page Title"
+    assert "Hello world" in result["text"]
+    assert result["status_code"] == 200
+
+
+@pytest.mark.asyncio
+async def test_fetch_web_page_rejects_redirect_to_private_host() -> None:
+    body = b"<html><body>secret</body></html>"
+    mock_http = AsyncMock()
+    mock_http.stream = MagicMock(
+        return_value=_FakeStreamContext(
+            _FakeStreamResponse(body=body, final_url="http://127.0.0.1/secret"),
+        )
+    )
+    mock_http.aclose = AsyncMock()
+
+    with pytest.raises(ValueError, match="redirect target"):
+        await fetch_web_page("https://example.com", client=mock_http)
+
+
+@pytest.mark.asyncio
+async def test_fetch_web_page_rejects_oversized_body() -> None:
+    huge = b"x" * (2 * 1024 * 1024 + 1)
+
+    class _HugeStream(_FakeStreamResponse):
+        async def aiter_bytes(self):
+            yield huge
+
+    mock_http = AsyncMock()
+    mock_http.stream = MagicMock(
+        return_value=_FakeStreamContext(_HugeStream(body=huge, final_url="https://example.com/big"))
+    )
+    mock_http.aclose = AsyncMock()
+
+    with pytest.raises(ValueError, match="exceeds"):
+        await fetch_web_page("https://example.com/big", client=mock_http)
+
+
+@pytest.mark.asyncio
+async def test_fetch_web_page_creates_client_when_none() -> None:
+    body = b"<html><body>owned client</body></html>"
+
+    class _OwnedClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def stream(self, method, url):
+            return _FakeStreamContext(_FakeStreamResponse(body=body, final_url=url))
+
+        async def aclose(self):
+            return None
+
+    with patch("article_factory.services.web_fetch.httpx.AsyncClient", _OwnedClient):
+        result = await fetch_web_page("https://example.com/owned")
+    assert "owned client" in result["text"]

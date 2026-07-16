@@ -4,7 +4,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from article_factory.models import FactoryRun, FlowQueue, TopicQueueItem
+from article_factory.models import CompletedArticle, FactoryRun, FlowQueue, StepExecution, TopicQueueItem
 from article_factory.services.flow_paths import resolve_default_flow_path
 
 DEFAULT_QUEUE_SLUG = "default"
@@ -56,11 +56,15 @@ def resolve_queue_flow_path(db: Session, queue: FlowQueue) -> str:
 
 def _queue_counts(db: Session, queue_id: int) -> dict[str, int]:
     counts = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
-    rows = (
-        db.query(TopicQueueItem.status, TopicQueueItem.id)
-        .filter_by(flow_queue_id=queue_id)
-        .all()
-    )
+    queue = db.get(FlowQueue, queue_id)
+    query = db.query(TopicQueueItem.status, TopicQueueItem.id)
+    if queue is not None and queue.slug == DEFAULT_QUEUE_SLUG:
+        query = query.filter(
+            (TopicQueueItem.flow_queue_id == queue_id) | (TopicQueueItem.flow_queue_id.is_(None))
+        )
+    else:
+        query = query.filter_by(flow_queue_id=queue_id)
+    rows = query.all()
     for status, _item_id in rows:
         key = status if status in counts else "queued"
         counts[key] = counts.get(key, 0) + 1
@@ -92,6 +96,7 @@ def flow_queue_payload(db: Session, queue: FlowQueue) -> dict:
         "slug": queue.slug,
         "name": queue.name,
         "flow_path": queue.flow_path,
+        "flow_version_id": queue.flow_version_id,
         "topic_slug": queue.topic_slug,
         "enabled": queue.enabled,
         "dispatch_order": queue.dispatch_order,
@@ -152,6 +157,7 @@ def update_flow_queue(
     topic_slug: str | None = None,
     enabled: bool | None = None,
     dispatch_order: int | None = None,
+    flow_version_id: int | None = None,
 ) -> FlowQueue:
     queue = db.get(FlowQueue, queue_id)
     if queue is None:
@@ -170,8 +176,160 @@ def update_flow_queue(
         queue.enabled = enabled
     if dispatch_order is not None:
         queue.dispatch_order = dispatch_order
+    if flow_version_id is not None:
+        queue.flow_version_id = flow_version_id if flow_version_id > 0 else None
     db.flush()
     return queue
+
+
+def _queue_item_scope_filter(query, queue: FlowQueue):
+    if queue.slug == DEFAULT_QUEUE_SLUG:
+        return query.filter(
+            (TopicQueueItem.flow_queue_id == queue.id) | (TopicQueueItem.flow_queue_id.is_(None))
+        )
+    return query.filter(TopicQueueItem.flow_queue_id == queue.id)
+
+
+def _queue_item_ids(db: Session, queue: FlowQueue) -> list[int]:
+    return [
+        row[0]
+        for row in _queue_item_scope_filter(db.query(TopicQueueItem.id), queue).all()
+    ]
+
+
+def _delete_finished_runs(db: Session, run_ids: list[str]) -> int:
+    if not run_ids:
+        return 0
+    db.query(StepExecution).filter(StepExecution.run_id.in_(run_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(CompletedArticle).filter(CompletedArticle.run_id.in_(run_ids)).delete(
+        synchronize_session=False
+    )
+    return (
+        db.query(FactoryRun)
+        .filter(FactoryRun.run_id.in_(run_ids), FactoryRun.status != "running")
+        .delete(synchronize_session=False)
+    )
+
+
+async def stop_and_clear_flow_queue(db: Session, *, queue_id: int) -> dict:
+    """Stop active runs for a flow queue, remove queued topics, and drop stopped runs from history."""
+    from article_factory.orchestrator.runner import factory_loop
+    from article_factory.services.run_control import (
+        clear_run_cancel,
+        mark_run_cancelled_in_db,
+        reconcile_stale_running_queue_items,
+        reassert_runs_stopped,
+        request_run_cancel,
+    )
+
+    queue = db.get(FlowQueue, queue_id)
+    if queue is None:
+        raise LookupError("Flow queue not found")
+
+    item_ids = _queue_item_ids(db, queue)
+
+    running_runs: list[FactoryRun] = []
+    if item_ids:
+        running_runs = (
+            db.query(FactoryRun)
+            .filter(FactoryRun.status == "running", FactoryRun.queue_item_id.in_(item_ids))
+            .all()
+        )
+
+    run_ids: list[str] = []
+    queue_item_ids: list[int] = []
+    for run in running_runs:
+        await request_run_cancel(run.run_id)
+        run_ids.append(run.run_id)
+        if run.queue_item_id is not None:
+            queue_item_ids.append(run.queue_item_id)
+        mark_run_cancelled_in_db(db, run)
+
+    if running_runs:
+        db.commit()
+        factory_loop.cancel_run_workers(run_ids=run_ids, queue_item_ids=queue_item_ids)
+        reassert_runs_stopped(db, run_ids)
+        reconcile_stale_running_queue_items(db)
+        db.commit()
+        for run_id in run_ids:
+            run = db.query(FactoryRun).filter_by(run_id=run_id).one_or_none()
+            if run is not None and run.status != "running":
+                await clear_run_cancel(run_id)
+
+    if item_ids:
+        remaining = (
+            db.query(FactoryRun)
+            .filter(FactoryRun.status == "running", FactoryRun.queue_item_id.in_(item_ids))
+            .all()
+        )
+        for run in remaining:
+            if run.run_id in run_ids:
+                continue
+            await request_run_cancel(run.run_id)
+            run_ids.append(run.run_id)
+            if run.queue_item_id is not None:
+                queue_item_ids.append(run.queue_item_id)
+            mark_run_cancelled_in_db(db, run)
+        if remaining:
+            db.commit()
+            factory_loop.cancel_run_workers(run_ids=[r.run_id for r in remaining], queue_item_ids=queue_item_ids)
+            reassert_runs_stopped(db, [r.run_id for r in remaining])
+            reconcile_stale_running_queue_items(db)
+            db.commit()
+
+    cleared_queued = 0
+    if item_ids:
+        cleared_queued = (
+            _queue_item_scope_filter(db.query(TopicQueueItem), queue)
+            .filter(TopicQueueItem.status == "queued")
+            .delete(synchronize_session=False)
+        )
+
+    # Drop stuck queue items and remove stopped runs so they no longer appear in Active.
+    cleared_pending_items = 0
+    if item_ids:
+        cleared_pending_items = (
+            _queue_item_scope_filter(db.query(TopicQueueItem), queue)
+            .filter(TopicQueueItem.status.in_(("running", "failed")))
+            .delete(synchronize_session=False)
+        )
+
+    deleted_runs = _delete_finished_runs(db, run_ids)
+
+    if item_ids:
+        stale_run_ids = [
+            row[0]
+            for row in db.query(FactoryRun.run_id)
+            .filter(
+                FactoryRun.queue_item_id.in_(item_ids),
+                FactoryRun.status.in_(("cancelled", "failed")),
+            )
+            .all()
+        ]
+        deleted_runs += _delete_finished_runs(db, stale_run_ids)
+
+    reconcile_stale_running_queue_items(db)
+    db.commit()
+    factory_loop.request_dispatch()
+
+    return {
+        "ok": True,
+        "queue_id": queue_id,
+        "queue_name": queue.name,
+        "stopped_runs": len(run_ids),
+        "stopped_run_ids": run_ids,
+        "deleted_runs": deleted_runs,
+        "cleared_queued_items": cleared_queued,
+        "cleared_pending_items": cleared_pending_items,
+        "message": (
+            f'Cleared {cleared_queued} queued topic(s), stopped {len(run_ids)} running article(s), '
+            f'and removed {deleted_runs} stopped run(s) from queue "{queue.name}".'
+            if cleared_queued or run_ids or cleared_pending_items
+            else f'Queue "{queue.name}" had nothing to stop or clear.'
+        ),
+    }
 
 
 def delete_flow_queue(db: Session, queue_id: int) -> dict:

@@ -4,7 +4,8 @@ import re
 from enum import Enum
 
 VERDICT_PATTERN = re.compile(
-    r"^\s*(?:[\*_]{1,2})?\s*VERDICT\s*:\s*(ACCEPT|REJECT)\s*(?:[\*_]{1,2})?\s*$",
+    r"^\s*(?:#{1,6}\s*)?(?:[\*_]{1,2}\s*)?"
+    r"VERDICT\s*:\s*(ACCEPT(?:ED)?|REJECT(?:ED)?)\s*(?:[\*_]{1,2})?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -20,7 +21,11 @@ def parse_verdict(content: str) -> Verdict:
     if not matches:
         return Verdict.NONE
     token = matches[-1].group(1).upper()
-    return Verdict.ACCEPT if token == "ACCEPT" else Verdict.REJECT
+    if token.startswith("ACCEPT"):
+        return Verdict.ACCEPT
+    if token.startswith("REJECT"):
+        return Verdict.REJECT
+    return Verdict.NONE
 
 
 def extract_feedback_body(content: str) -> str:
