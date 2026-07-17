@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import StatsDisclosure from "./StatsDisclosure";
 import ToolUseDisclosure from "./ToolUseDisclosure";
-import type { StepExecution } from "../api";
+import { stepRoleLabel } from "../utils/stepRoleLabels";
 import { isStepInFlight, stepActivityLabel, stepCpRound } from "../utils/stepProgress";
 import { statsForStep, stepTurns } from "../utils/stepStats";
 
@@ -46,7 +46,7 @@ export default function StepTimeline({ steps }: { steps: StepView[] }) {
           className={`step-timeline-item status-${step.status}${step.isPlaceholder ? " is-placeholder" : ""}${inFlight ? " is-live" : ""}`}
         >
           <div className="step-timeline-head">
-            <strong>{step.label || step.step_key}</strong>
+            <strong>{stepRoleLabel(step.step_key, step.label)}</strong>
             <span>{stepStatusLabel(step.status)}</span>
           </div>
           {!step.isPlaceholder && (

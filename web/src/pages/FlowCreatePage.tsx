@@ -8,8 +8,8 @@ const STEP_COUNTS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
 export default function FlowCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [displayName, setDisplayName] = useState("New flow");
-  const [slug, setSlug] = useState("new-flow");
+  const [displayName, setDisplayName] = useState("New desk");
+  const [slug, setSlug] = useState("new-desk");
   const [folder, setFolder] = useState(searchParams.get("folder") || "");
   const [customSteps, setCustomSteps] = useState("4");
   const [templates, setTemplates] = useState<FlowTemplate[]>([]);
@@ -31,8 +31,8 @@ export default function FlowCreatePage() {
     void api
       .createFlow({
         folder,
-        slug: slug.trim() || "new-flow",
-        display_name: displayName.trim() || "New flow",
+        slug: slug.trim() || "new-desk",
+        display_name: displayName.trim() || "New desk",
         step_count: stepCount,
       })
       .then((result) => {
@@ -67,11 +67,11 @@ export default function FlowCreatePage() {
 
   return (
     <section className="card">
-      <p><Link to="/flows">← All flows</Link></p>
-      <h2>Create flow</h2>
+      <p><Link to="/flows">← All desks</Link></p>
+      <h2>Create desk</h2>
       <p className="hint">
         Start from a template or pick a blank step count. You can add, remove, and reorder steps in the editor.
-        Choose the model when you start a queue on <Link to="/start-flows">Start flows</Link>.
+        Choose the model when you plan a shift on <Link to="/start-flows">Plan a shift</Link>.
       </p>
       {error && <p className="error">{error}</p>}
 
@@ -114,7 +114,7 @@ export default function FlowCreatePage() {
         </>
       )}
 
-      <h3>Blank flow</h3>
+      <h3>Blank desk</h3>
       <div className="flow-create-buttons">
         {STEP_COUNTS.map((count) => (
           <button key={count} type="button" className="primary" disabled={busy} onClick={() => create(count)}>

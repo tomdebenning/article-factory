@@ -191,7 +191,7 @@ def test_flow_queues_preset_value_error_and_post_value_error(client, api_headers
                 "flow_path": rel_path,
             },
         )
-    assert bad_start.status_code == 400
+    assert bad_start.status_code in {400, 410}
 
     bad_post = client.post(
         "/api/flow-queues",

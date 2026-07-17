@@ -170,27 +170,13 @@ def test_flow_queue_crud_and_validation(client, api_headers, configured_db) -> N
     assert deleted.json()["ok"] is True
 
 
-def test_flow_queue_start_validation_and_presets(client, api_headers) -> None:
-    empty = client.post(
+def test_flow_queue_start_retired(client, api_headers) -> None:
+    response = client.post(
         "/api/flow-queues/start",
         headers=api_headers,
         json={"topics": [], "default_model": "m", "flow_path": "test/SimpleTest.flow.json", "name": "X"},
     )
-    assert empty.status_code == 400
-
-    missing_model = client.post(
-        "/api/flow-queues/start",
-        headers=api_headers,
-        json={"topics": ["One"], "default_model": "", "flow_path": "test/SimpleTest.flow.json", "name": "X"},
-    )
-    assert missing_model.status_code == 400
-
-    missing_flow = client.post(
-        "/api/flow-queues/start",
-        headers=api_headers,
-        json={"topics": ["One"], "default_model": "m", "flow_path": "", "name": "X"},
-    )
-    assert missing_flow.status_code == 400
+    assert response.status_code == 410
 
     preset_missing = client.get("/api/flow-queues/presets/does-not-exist", headers=api_headers)
     assert preset_missing.status_code == 404

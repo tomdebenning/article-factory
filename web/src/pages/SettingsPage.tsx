@@ -55,9 +55,9 @@ export default function SettingsPage() {
           brave_search_api_key: data.brave_search_api_key ?? "",
           brave_search_configured: data.brave_search_configured ?? false,
           gateway_id: data.gateway_id ?? "",
-          gateway_display_name: data.gateway_display_name ?? "Article Factory",
+          gateway_display_name: data.gateway_display_name ?? "The Newsroom",
         });
-        setFactoryDisplayName(data.gateway_display_name ?? "Article Factory");
+        setFactoryDisplayName(data.gateway_display_name ?? "The Newsroom");
       })
       .catch((e: Error) => setLoadError(e.message));
   }, []);
@@ -133,14 +133,14 @@ export default function SettingsPage() {
       if (!settings.cms_url.trim()) {
         setTest({
           status: "error",
-          message: "Enter the Showroom CMS URL before testing.",
+          message: "Enter The Edition URL before testing.",
         });
         return;
       }
       if (!settings.cms_api_key.trim()) {
         setTest({
           status: "error",
-          message: "Paste the Article Factory integration key from Showroom Admin (/admin) before testing.",
+          message: "Paste the newsroom integration key from The Edition admin (/admin) before testing.",
         });
         return;
       }
@@ -191,7 +191,7 @@ export default function SettingsPage() {
       <h2>Integration settings</h2>
       <p className="hint">
         Generate keys in each app, copy them across, then test the connection. Accepted artifacts
-        publish to Showroom automatically.
+        publish to The Edition automatically.
       </p>
 
       <div className="step-card">
@@ -212,7 +212,7 @@ export default function SettingsPage() {
               setFactoryNameMessage(null);
               setFactoryNameError(null);
             }}
-            placeholder="e.g. Office Article Factory"
+            placeholder="e.g. Office Newsroom"
           />
         </label>
         {factoryNameMessage && <p className="ok">{factoryNameMessage}</p>}
@@ -231,7 +231,7 @@ export default function SettingsPage() {
         <h3>Factory admin API key</h3>
         <ApiKeyCard
           title="Key for this admin UI"
-          description="Generate here, then keep it in this browser to access Article Factory settings and the queue."
+          description="Generate here, then keep it in this browser to access newsroom settings and the queue."
           configured={authConfigured}
           masked={authMasked}
           generatedKey={generatedFactoryKey}
@@ -250,7 +250,7 @@ export default function SettingsPage() {
       <div className="step-card step-card-tools">
         <h3>Tools — Brave Search</h3>
         <p className="hint">
-          Required for the <strong>Web search (Brave)</strong> tool on flow steps. Get a key from{" "}
+          Required for the <strong>Web search (Brave)</strong> tool on desk steps. Get a key from{" "}
           <a href="https://brave.com/search/api/" target="_blank" rel="noreferrer">
             Brave Search API
           </a>
@@ -326,13 +326,13 @@ export default function SettingsPage() {
       </div>
 
       <div className="step-card">
-        <h3>Showroom CMS</h3>
+        <h3>The Edition</h3>
         <p className="hint">
-          In Showroom, open <a href="http://127.0.0.1:8200/admin" target="_blank" rel="noreferrer">/admin</a>,
-          generate the Article Factory integration key, copy it, and paste it below.
+          In The Edition, open <a href="http://127.0.0.1:8200/admin" target="_blank" rel="noreferrer">/admin</a>,
+          generate the newsroom integration key, copy it, and paste it below.
         </p>
         <label>
-          Showroom CMS URL
+          The Edition URL
           <input
             value={settings.cms_url}
             onChange={(e) => {
@@ -343,7 +343,7 @@ export default function SettingsPage() {
           />
         </label>
         <label>
-          Showroom integration key (from Showroom Admin)
+          Edition integration key (from /admin)
           <SecretInput
             value={settings.cms_api_key}
             onChange={(cms_api_key) => {
@@ -359,22 +359,22 @@ export default function SettingsPage() {
           disabled={cmsTest.status === "testing"}
           onClick={() => testConnection("cms")}
         >
-          {cmsTest.status === "testing" ? "Testing…" : "Test Showroom CMS"}
+          {cmsTest.status === "testing" ? "Testing…" : "Test The Edition"}
         </button>
         <ConnectionTestFeedback
           state={cmsTest}
-          successTitle="Showroom connected"
-          errorTitle="Showroom connection failed"
+          successTitle="The Edition connected"
+          errorTitle="The Edition connection failed"
         />
       </div>
 
       <div className="step-card">
-        <h3>Default flow</h3>
+        <h3>Default desk</h3>
         <p className="hint">
-          Used when queue items do not specify a flow. Flows are independent of Showroom topic categories.
+          Used when roster items do not specify a desk. Desks are independent of Edition topic categories.
         </p>
         <label>
-          Default flow path
+          Default desk path
           <div className="flow-select-row">
             <select
               value={settings.default_flow_path}
@@ -404,7 +404,7 @@ export default function SettingsPage() {
         </label>
         <p className="hint">
           <Link to={`/flows/edit?path=${encodeURIComponent(settings.default_flow_path)}`}>
-            Edit default flow prompts
+            Edit default desk prompts
           </Link>
         </p>
       </div>

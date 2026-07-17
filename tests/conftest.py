@@ -74,3 +74,40 @@ def api_headers(configured_db) -> dict[str, str]:
     finally:
         db.close()
     return {"X-API-Key": "test-factory-key"}
+
+
+def save_shift_plan_via_api(
+    client: TestClient,
+    api_headers: dict[str, str],
+    *,
+    topics: list[str],
+    flow_path: str,
+    default_model: str = "test-model",
+    topic_slug: str = "general",
+    desk_name: str = "Test desk",
+    save_preset: bool = False,
+    preset_slug: str = "",
+    window_index: int = 0,
+):
+    from article_factory.services.shift_windows import today_and_tomorrow_shift_windows
+
+    window = today_and_tomorrow_shift_windows()[window_index]
+    return client.post(
+        "/api/shifts/plans/save",
+        headers=api_headers,
+        json={
+            "window_key": window.window_key,
+            "default_model": default_model,
+            "desks": [
+                {
+                    "desk_path": flow_path,
+                    "topic_slug": topic_slug,
+                    "name": desk_name,
+                }
+            ],
+            "assignments_by_desk_index": {"0": topics},
+            "save_preset": save_preset,
+            "preset_slug": preset_slug,
+            "preset_name": desk_name,
+        },
+    )

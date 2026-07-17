@@ -76,79 +76,10 @@ def remove_queue_preset(slug: str, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/start")
 def start_flow_queue(body: FlowQueueStartBody, db: Session = Depends(get_db)) -> dict:
-    topics = [line.strip() for line in body.topics if line.strip()]
-    if not topics:
-        raise HTTPException(status_code=400, detail="Add at least one topic before starting.")
-
-    model = body.default_model.strip()
-    if not model:
-        raise HTTPException(status_code=400, detail="Select a model before starting.")
-
-    flow_path = body.flow_path.strip()
-    if not flow_path:
-        raise HTTPException(status_code=400, detail="Select a flow before starting.")
-
-    update_factory_settings(db, {"default_model": model})
-
-    try:
-        if body.queue_id is not None:
-            queue = update_flow_queue(
-                db,
-                body.queue_id,
-                name=body.name,
-                flow_path=flow_path,
-                topic_slug=body.topic_slug,
-                enabled=body.enabled,
-                flow_version_id=body.flow_version_id,
-            )
-        else:
-            queue = create_flow_queue(
-                db,
-                name=body.name,
-                flow_path=flow_path,
-                topic_slug=body.topic_slug,
-                slug=body.preset_slug,
-            )
-            if body.flow_version_id:
-                queue.flow_version_id = body.flow_version_id
-            if not body.enabled:
-                queue.enabled = False
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if body.enabled:
-        queue.enabled = True
-
-    created = enqueue_topics_to_queue(db, queue.id, topics)
-    db.flush()
-
-    preset = None
-    if body.save_preset:
-        preset = write_queue_preset(
-            db,
-            {
-                "name": body.name,
-                "slug": body.preset_slug,
-                "topic_slug": body.topic_slug,
-                "flow_path": flow_path,
-                "default_model": model,
-                "topics": topics,
-            },
-        )
-
-    db.commit()
-    db.refresh(queue)
-    factory_loop.request_dispatch()
-
-    return {
-        "ok": True,
-        "queue": flow_queue_payload(db, queue),
-        "enqueued": len(created),
-        "preset": preset,
-        "message": f"Started queue “{queue.name}” with {len(created)} topic(s).",
-    }
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy queue start is retired. Plan and activate a shift under /api/shifts instead.",
+    )
 
 
 @router.post("")

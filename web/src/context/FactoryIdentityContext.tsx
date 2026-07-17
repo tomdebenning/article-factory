@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api";
 
-const DEFAULT_FACTORY_NAME = "Article Factory";
+const DEFAULT_FACTORY_NAME = "The Newsroom";
 
 type FactoryIdentityContextValue = {
   factoryName: string;

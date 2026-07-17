@@ -76,6 +76,54 @@ class TopicQueueItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class ShiftPlan(Base):
+    """One planned shift window — desks and assignments dispatch while active."""
+
+    __tablename__ = "shift_plans"
+    __table_args__ = (UniqueConstraint("window_starts_at", name="uq_shift_plans_window_starts_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shift_key: Mapped[str] = mapped_column(String(16), index=True)
+    window_starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    window_ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    default_model: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ShiftDeskSlot(Base):
+    """A desk staffed on a shift plan."""
+
+    __tablename__ = "shift_desk_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shift_plan_id: Mapped[int] = mapped_column(ForeignKey("shift_plans.id"), index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    desk_path: Mapped[str] = mapped_column(String(256))
+    topic_slug: Mapped[str] = mapped_column(String(64), default="general")
+    flow_version_id: Mapped[int | None] = mapped_column(ForeignKey("flow_versions.id"), nullable=True)
+    dispatch_order: Mapped[int] = mapped_column(Integer, default=100)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ShiftAssignment(Base):
+    """One story assignment for a desk on a shift."""
+
+    __tablename__ = "shift_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shift_desk_slot_id: Mapped[int] = mapped_column(ForeignKey("shift_desk_slots.id"), index=True)
+    prompt: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class FactoryRun(Base):
     __tablename__ = "factory_runs"
 
@@ -84,6 +132,10 @@ class FactoryRun(Base):
     topic_slug: Mapped[str] = mapped_column(String(64), index=True)
     flow_path: Mapped[str] = mapped_column(String(256), default="sports/standard-4-step.flow.json")
     queue_item_id: Mapped[int | None] = mapped_column(ForeignKey("topic_queue.id"), nullable=True)
+    shift_plan_id: Mapped[int | None] = mapped_column(ForeignKey("shift_plans.id"), nullable=True, index=True)
+    shift_assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shift_assignments.id"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), default="running")
     current_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
     selected_puller: Mapped[str] = mapped_column(String(128), default="")

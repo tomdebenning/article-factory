@@ -204,3 +204,33 @@ class QueueRetryResult(BaseModel):
     message: str
     item: dict[str, Any] | None = None
     blockers: list[QueueRetryBlocker] = Field(default_factory=list)
+
+
+class ShiftPlanEnsureBody(BaseModel):
+    window_key: str
+
+
+class ShiftDeskSlotBody(BaseModel):
+    desk_path: str
+    topic_slug: str = "general"
+    name: str = ""
+    flow_version_id: int | None = None
+
+
+class ShiftAssignmentsBody(BaseModel):
+    prompts: list[str] = Field(default_factory=list)
+    priority: int = 100
+
+
+class ShiftPlanSettingsBody(BaseModel):
+    default_model: str = ""
+
+
+class ShiftPlanSaveBody(BaseModel):
+    window_key: str
+    default_model: str = ""
+    desks: list[ShiftDeskSlotBody] = Field(default_factory=list)
+    assignments_by_desk_index: dict[str, list[str]] = Field(default_factory=dict)
+    save_preset: bool = False
+    preset_name: str = ""
+    preset_slug: str = ""

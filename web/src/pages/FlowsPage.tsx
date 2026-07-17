@@ -229,7 +229,7 @@ export default function FlowsPage() {
   };
 
   const deleteFlow = (path: string) => {
-    if (!window.confirm(`Delete flow ${path}?`)) return;
+    if (!window.confirm(`Delete desk ${path}?`)) return;
     setBusyPath(path);
     setError(null);
     void api
@@ -268,14 +268,14 @@ export default function FlowsPage() {
       reload();
       navigate(`/flows/edit?path=${encodeURIComponent(result.path)}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not import flow file.");
+      setError(e instanceof Error ? e.message : "Could not import desk file.");
     }
   };
 
   return (
     <section className="card flows-page">
       <div className="flows-page-head">
-        <h2>Flow library</h2>
+        <h2>Desks</h2>
         <div className="flow-page-actions">
           <button type="button" className="secondary" onClick={() => importInputRef.current?.click()}>
             Import JSON
@@ -292,15 +292,16 @@ export default function FlowsPage() {
             }}
           />
           <Link to="/flows/new" className="primary flows-new-link">
-            Create flow
+            Create desk
           </Link>
         </div>
       </div>
       <p className="hint">
-        Flows are JSON prompt files on disk. Each queue item runs one flow. Edit steps, loops, and prompts here.
+        Desks define the editorial process for a beat — reporter, editor, and other steps. Each assignment
+        runs through one desk. Edit steps, loops, and prompts here.
       </p>
       <div className="flow-default-banner">
-        <span>Default queue flow:</span>
+        <span>Default desk:</span>
         <code>{defaultFlowPath}</code>
         <Link to="/settings">Change in settings</Link>
         <Link to={`/flows/edit?path=${encodeURIComponent(defaultFlowPath)}`}>Open prompts</Link>
@@ -346,16 +347,16 @@ export default function FlowsPage() {
         </aside>
 
         <div className="flow-tree-detail">
-          <h3>{selectedType === "file" && selectedPath ? selectedPath : selectedPath || "All flows"}</h3>
+          <h3>{selectedType === "file" && selectedPath ? selectedPath : selectedPath || "All desks"}</h3>
           {selectedType === "folder" && selectedPath === "_templates" && (
             <p className="hint flow-template-note">
-              Flows in <code>_templates</code> are starting points only. Move one into a regular folder to use it on{" "}
-              <Link to="/start-flows">Start flows</Link>.
+              Templates in <code>_templates</code> are starting points only. Move one into a regular folder to use it on{" "}
+              <Link to="/start-flows">Plan a shift</Link>.
             </p>
           )}
-          {flowsLoading && folderFlows.length === 0 && <p className="hint">Loading flows…</p>}
+          {flowsLoading && folderFlows.length === 0 && <p className="hint">Loading desks…</p>}
           {!flowsLoading && folderFlows.length === 0 && (
-            <p className="hint">No flows here yet. <Link to="/flows/new">Create one</Link>.</p>
+            <p className="hint">No desks here yet. <Link to="/flows/new">Create one</Link>.</p>
           )}
           {folderFlows.length > 0 && (
             <ul className="flow-file-list">

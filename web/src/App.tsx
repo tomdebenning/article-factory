@@ -10,6 +10,7 @@ import FlowBatchComparisonPage from "./pages/FlowBatchComparisonPage";
 import FlowPerformancePage from "./pages/FlowPerformancePage";
 import FlowsPage from "./pages/FlowsPage";
 import PersonasPage from "./pages/PersonasPage";
+import ShiftsBoardPage from "./pages/ShiftsBoardPage";
 import StartFlowsPage from "./pages/StartFlowsPage";
 import PromptsPage from "./pages/PromptsPage";
 import QueuePage from "./pages/QueuePage";
@@ -26,10 +27,11 @@ export default function App() {
         <h1>{factoryName}</h1>
         <nav>
           <Link to="/">Home</Link>
+          <Link to="/shifts">Shifts</Link>
           <Link to="/queue">Active</Link>
-          <Link to="/start-flows">Start flows</Link>
-          <Link to="/flows">Flow library</Link>
-          <Link to="/personas">Personas</Link>
+          <Link to="/start-flows">Plan a shift</Link>
+          <Link to="/flows">Desks</Link>
+          <Link to="/personas">Desk staff</Link>
           <Link to="/articles">Artifacts</Link>
           <Link to="/stats">Stats</Link>
           <Link to="/settings">Settings</Link>
@@ -40,6 +42,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/queue" element={<QueuePage />} />
+          <Route path="/shifts" element={<ShiftsBoardPage />} />
           <Route path="/start-flows" element={<StartFlowsPage />} />
           <Route path="/articles" element={<ArticlesPage />} />
           <Route path="/articles/:runId" element={<ArticleDetailPage />} />

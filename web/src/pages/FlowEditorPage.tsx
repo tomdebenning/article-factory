@@ -144,7 +144,7 @@ export default function FlowEditorPage() {
       .saveFlow(path, payload)
       .then((saved) => {
         setFlow(saved.flow);
-        setMessage("Flow saved.");
+        setMessage("Desk saved.");
         notifyFlowsChanged();
       })
       .catch((e: Error) => setError(e.message))
@@ -155,7 +155,7 @@ export default function FlowEditorPage() {
     return (
       <section className="card">
         <p className="error">Missing flow path.</p>
-        <Link to="/flows">Back to flows</Link>
+        <Link to="/flows">Back to desks</Link>
       </section>
     );
   }
@@ -163,7 +163,7 @@ export default function FlowEditorPage() {
   if (!flow) {
     return (
       <section className="card">
-        <p>Loading flow…</p>
+        <p>Loading desk…</p>
       </section>
     );
   }
@@ -171,7 +171,7 @@ export default function FlowEditorPage() {
   return (
     <section className="card flow-editor">
       <div className="flow-editor-head">
-        <p><Link to="/flows">← All flows</Link></p>
+        <p><Link to="/flows">← All desks</Link></p>
         <div className="flow-editor-head-actions">
           <Link
             to={`/flows/performance?path=${encodeURIComponent(path)}`}
@@ -225,7 +225,7 @@ export default function FlowEditorPage() {
       <p className="hint">
         <code>{path}</code> · Templates: {"{{topic}}"}, {"{{feedback}}"}, {"{{step_key}}"} (e.g. {"{{writer}}"}).
         Review steps should end with <code>VERDICT: ACCEPT</code> or <code>VERDICT: REJECT</code>.
-        Model and puller are chosen on <Link to="/start-flows">Start flows</Link>, not in the flow file.
+        Model and puller are chosen on <Link to="/start-flows">Plan a shift</Link>, not in the desk file.
       </p>
       {message && <p className="ok">{message}</p>}
       {error && <p className="error">{error}</p>}
@@ -233,7 +233,7 @@ export default function FlowEditorPage() {
         <div className="flow-template-banner">
           <strong>Template flow</strong>
           <p className="hint">
-            This file lives in <code>_templates</code> and will not appear in the Start flows dropdown until you move it
+            This file lives in <code>_templates</code> and will not appear in the Plan a shift dropdown until you move it
             into the library.
           </p>
           <FlowMoveForm
@@ -483,7 +483,7 @@ export default function FlowEditorPage() {
           Add step
         </button>
         <button type="button" className="primary" disabled={saving || readOnlyVersion} onClick={save}>
-          {saving ? "Saving…" : "Save flow"}
+          {saving ? "Saving…" : "Save desk"}
         </button>
       </div>
     </section>

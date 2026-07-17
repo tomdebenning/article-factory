@@ -14,6 +14,9 @@ from article_factory.models import (
     CompletedArticle,
     FactoryRun,
     FlowQueue,
+    ShiftAssignment,
+    ShiftDeskSlot,
+    ShiftPlan,
     TopicQueueItem,
 )
 from article_factory.orchestrator.flow_runner import (
@@ -36,7 +39,8 @@ from article_factory.services.showroom_status_sync import (
     refresh_showroom_status,
     schedule_showroom_status_refresh,
 )
-from article_factory.services.flow_queues import ensure_default_flow_queue, select_queued_items_round_robin
+from article_factory.services.flow_queues import ensure_default_flow_queue
+from article_factory.services.shift_dispatch import mark_assignment_status, select_pending_assignments_round_robin
 from article_factory.services.puller_selection import idle_pullers_for_model
 from article_factory.services.run_control import (
     RunCancelledError,
@@ -70,13 +74,22 @@ def _cms_configured(runtime: RuntimeSettings) -> bool:
 
 
 
+def _mark_dispatch_item(db: Session, run: FactoryRun, status: str) -> None:
+    if run.queue_item_id:
+        item = db.get(TopicQueueItem, run.queue_item_id)
+        if item:
+            item.status = status
+    mark_assignment_status(
+        db,
+        assignment_id=run.shift_assignment_id,
+        status=status,
+        run_id=run.run_id,
+    )
+    db.commit()
+
+
 def _mark_queue_item(db: Session, run: FactoryRun, status: str) -> None:
-    if not run.queue_item_id:
-        return
-    item = db.get(TopicQueueItem, run.queue_item_id)
-    if item:
-        item.status = status
-        db.commit()
+    _mark_dispatch_item(db, run, status)
 
 
 def _front_queue_priority(db: Session) -> int:
@@ -92,6 +105,10 @@ def _front_queue_priority(db: Session) -> int:
 
 
 def _topic_prompt_for_run(db: Session, run: FactoryRun) -> str:
+    if run.shift_assignment_id:
+        assignment = db.get(ShiftAssignment, run.shift_assignment_id)
+        if assignment and assignment.prompt.strip():
+            return assignment.prompt
     if run.queue_item_id:
         item = db.get(TopicQueueItem, run.queue_item_id)
         if item and item.prompt.strip():
@@ -316,6 +333,8 @@ async def run_pipeline_for_topic(
     selected_puller: str | None = None,
     flow_path: str | None = None,
     flow_version_id: int | None = None,
+    shift_plan_id: int | None = None,
+    shift_assignment_id: int | None = None,
 ) -> FactoryRun:
     resolved_flow = (flow_path or "").strip() or resolve_default_flow_path(db)
     first_step = "writer"
@@ -335,11 +354,18 @@ async def run_pipeline_for_topic(
         topic_slug=topic_slug,
         flow_path=resolved_flow,
         queue_item_id=queue_item_id,
+        shift_plan_id=shift_plan_id,
+        shift_assignment_id=shift_assignment_id,
         status="running",
         current_step=first_step,
     )
     if selected_puller:
         run.selected_puller = selected_puller
+
+    if shift_plan_id is not None:
+        plan = db.get(ShiftPlan, shift_plan_id)
+        if plan is not None and (plan.default_model or "").strip():
+            run.selected_model = plan.default_model.strip()
 
     version = resolve_flow_version_for_run(
         db,
@@ -356,6 +382,10 @@ async def run_pipeline_for_topic(
         run.topic_queue_snapshot_id = snapshot.id
 
     db.add(run)
+    if shift_assignment_id is not None:
+        assignment = db.get(ShiftAssignment, shift_assignment_id)
+        if assignment is not None:
+            assignment.run_id = run.run_id
     db.commit()
     db.refresh(run)
 
@@ -407,7 +437,7 @@ class FactoryLoop:
         self._run_workers: dict[str, asyncio.Task] = {}
         self._reserved_pullers: set[str] = set()
         self._dispatch_event: asyncio.Event | None = None
-        self._queue_rr_index: int = 0
+        self._shift_rr_index: int = 0
 
     def _ensure_dispatch_event(self) -> asyncio.Event:
         if self._dispatch_event is None:
@@ -528,6 +558,11 @@ class FactoryLoop:
 
         self._prune_stale_puller_reservations()
 
+        model = ""
+        cp_url = ""
+        active_plan = None
+        queued_count_hint = 0
+
         db = SessionLocal()
         try:
             ensure_default_flow_queue(db)
@@ -544,6 +579,10 @@ class FactoryLoop:
                 worker_key = f"run-{run.run_id}"
                 if worker_key in self._run_workers:
                     continue
+                if run.shift_assignment_id is not None:
+                    assignment_worker_key = f"assignment-{run.shift_assignment_id}"
+                    if assignment_worker_key in self._run_workers:
+                        continue
                 if run.queue_item_id is not None:
                     queue_worker_key = f"queue-{run.queue_item_id}"
                     if queue_worker_key in self._run_workers:
@@ -551,15 +590,23 @@ class FactoryLoop:
                 self._spawn_worker(worker_key, self._continue_run(run.run_id))
 
             runtime = load_runtime_settings(db)
+            active_plan = (
+                db.query(ShiftPlan)
+                .filter_by(status="active")
+                .order_by(ShiftPlan.activated_at.desc())
+                .first()
+            )
             model = runtime.default_model.strip()
+            if active_plan and (active_plan.default_model or "").strip():
+                model = active_plan.default_model.strip()
             cp_url = runtime.control_plane_url.strip()
             in_use = {r.selected_puller for r in running_runs if r.selected_puller}
             in_use |= self._reserved_pullers
-            queued_count_hint = db.query(TopicQueueItem).filter_by(status="queued").count()
+            queued_count_hint = db.query(ShiftAssignment).filter_by(status="pending").count()
         finally:
             db.close()
 
-        if not model or not cp_url:
+        if not model or not cp_url or active_plan is None:
             return
 
         cp = ControlPlaneClient(base_url=cp_url)
@@ -591,37 +638,36 @@ class FactoryLoop:
 
         db = SessionLocal()
         try:
-            queued_items, next_index = select_queued_items_round_robin(
+            picked, next_index = select_pending_assignments_round_robin(
                 db,
                 limit=len(idle),
-                start_index=self._queue_rr_index,
+                start_index=self._shift_rr_index,
             )
-            self._queue_rr_index = next_index
+            self._shift_rr_index = next_index
 
-            for item, puller in zip(queued_items, idle, strict=False):
-                worker_key = f"queue-{item.id}"
+            for (assignment, desk, plan), puller in zip(picked, idle, strict=False):
+                worker_key = f"assignment-{assignment.id}"
                 if worker_key in self._run_workers:
                     continue
                 puller_name = str(puller.get("puller_name") or "")
                 if not puller_name:
                     continue
-                queue = db.get(FlowQueue, item.flow_queue_id) if item.flow_queue_id else None
-                queue_flow_version_id = queue.flow_version_id if queue else None
-                item.status = "running"
+                assignment.status = "running"
                 commit_with_retry(db)
                 self._reserved_pullers.add(puller_name)
                 self._spawn_worker(
                     worker_key,
-                    self._run_queue_item(
-                        item.id,
-                        item.topic_slug,
-                        item.prompt,
-                        item.flow_path,
+                    self._run_shift_assignment(
+                        assignment.id,
+                        desk.topic_slug,
+                        assignment.prompt,
+                        desk.desk_path,
                         puller_name,
-                        queue_flow_version_id,
+                        desk.flow_version_id,
+                        plan.id,
                     ),
                 )
-            if queued_items:
+            if picked:
                 schedule_showroom_status_refresh(force=True)
         finally:
             db.close()
@@ -637,6 +683,36 @@ class FactoryLoop:
             await continue_active_run(db, run)
         finally:
             db.close()
+
+    async def _run_shift_assignment(
+        self,
+        assignment_id: int,
+        topic_slug: str,
+        topic_prompt: str,
+        flow_path: str,
+        puller_name: str,
+        flow_version_id: int | None = None,
+        shift_plan_id: int | None = None,
+    ) -> None:
+        from article_factory.db import SessionLocal
+
+        try:
+            db = SessionLocal()
+            try:
+                await run_pipeline_for_topic(
+                    db,
+                    topic_slug=topic_slug,
+                    topic_prompt=topic_prompt,
+                    selected_puller=puller_name,
+                    flow_path=flow_path,
+                    flow_version_id=flow_version_id,
+                    shift_plan_id=shift_plan_id,
+                    shift_assignment_id=assignment_id,
+                )
+            finally:
+                db.close()
+        finally:
+            self._reserved_pullers.discard(puller_name)
 
     async def _run_queue_item(
         self,

@@ -164,7 +164,7 @@ export default function DashboardPage() {
         <p className="home-lead">
           Turn a list of topics into finished articles using reusable prompt flows. Assign a model,
           queue your topics, and the factory runs each step through your control-plane pullers —
-          then publish accepted artifacts to Showroom.
+          then publish accepted artifacts to The Edition.
         </p>
       </section>
 
@@ -199,7 +199,7 @@ export default function DashboardPage() {
             <p>
               {readiness.phase === "setup_required"
                 ? "Finish setup below, then queue topics to begin."
-                : "Pick an existing flow to run, or create a new one in the flow library."}
+                : "Pick an existing desk to run, or create a new one in the desk library."}
             </p>
             {!readiness.setup_complete && (
               <p className="hint">{readiness.summary}</p>
@@ -209,19 +209,19 @@ export default function DashboardPage() {
       </section>
 
       <section className="home-actions">
-        <Link to="/start-flows" className="home-action-card home-action-primary">
-          <span className="home-action-label">Start a flow</span>
+        <Link to="/shifts" className="home-action-card home-action-primary">
+          <span className="home-action-label">Shift board</span>
           <span className="home-action-desc">
-            Name a queue, choose a flow and model, add topics, and start writing.
+            See the next four UTC shifts, staff desks, and activate when ready.
           </span>
-          <span className="home-action-cta">Go to Start flows →</span>
+          <span className="home-action-cta">Open shift board →</span>
         </Link>
-        <Link to="/flows/new" className="home-action-card home-action-secondary">
-          <span className="home-action-label">Create a new flow</span>
+        <Link to="/start-flows" className="home-action-card home-action-secondary">
+          <span className="home-action-label">Plan a shift</span>
           <span className="home-action-desc">
-            Build a new prompt pipeline from a template or blank step count.
+            Load assignments onto desks for a specific shift window.
           </span>
-          <span className="home-action-cta">Open flow creator →</span>
+          <span className="home-action-cta">Plan a shift →</span>
         </Link>
       </section>
 

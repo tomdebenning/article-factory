@@ -3,10 +3,10 @@ export type SixHourSlot = "night" | "morning" | "afternoon" | "evening";
 export const SIX_HOUR_SLOT_ORDER: SixHourSlot[] = ["night", "morning", "afternoon", "evening"];
 
 export const SIX_HOUR_SLOT_LABEL: Record<SixHourSlot, string> = {
-  night: "12 AM – 6 AM",
-  morning: "6 AM – 12 PM",
-  afternoon: "12 PM – 6 PM",
-  evening: "6 PM – 12 AM",
+  night: "Night Shift · 12 AM – 6 AM UTC",
+  morning: "Morning Shift · 6 AM – 12 PM UTC",
+  afternoon: "Afternoon Shift · 12 PM – 6 PM UTC",
+  evening: "Evening Shift · 6 PM – 12 AM UTC",
 };
 
 export type TimeSlot<T> = {

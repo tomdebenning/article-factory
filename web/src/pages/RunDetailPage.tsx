@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import RunProgressPanel from "../components/RunProgressPanel";
 import { api, type RunDetail } from "../api";
+import { stepRoleLabel } from "../utils/stepRoleLabels";
 
 export default function RunDetailPage() {
   const { runId = "" } = useParams();
@@ -80,7 +81,7 @@ export default function RunDetailPage() {
     void api
       .publishRun(runId)
       .then(() => {
-        setMessage("Published to Showroom.");
+        setMessage("Published to The Edition.");
         reload();
       })
       .catch((e: Error) => setError(e.message))
@@ -142,7 +143,7 @@ export default function RunDetailPage() {
                 </button>
               )}
               <button type="button" className="primary" disabled={busy} onClick={publishToShowroom}>
-                {busy ? "Publishing…" : "Publish to Showroom"}
+                {busy ? "Publishing…" : "Publish to The Edition"}
               </button>
               <button type="button" className="secondary run-delete-button" disabled={busy} onClick={deleteRun}>
                 {busy ? "Deleting…" : "Delete run"}
@@ -158,22 +159,22 @@ export default function RunDetailPage() {
       {message && <p className="ok">{message}</p>}
       {detail.run.status === "running" && (
         <p className="hint">
-          This run will auto-publish to Showroom when it completes successfully.
+          This run will auto-publish to The Edition when it completes successfully.
         </p>
       )}
       {detail.run.status === "completed" && !detail.run.error && (
-        <p className="ok">Auto-published to Showroom on completion.</p>
+        <p className="ok">Auto-published to The Edition on completion.</p>
       )}
       {detail.run.status === "completed" && detail.run.error?.includes("Showroom") && (
         <p className="error">
-          Auto-publish to Showroom failed. Use <strong>Publish to Showroom</strong> to retry.
+          Auto-publish to The Edition failed. Use <strong>Publish to The Edition</strong> to retry.
         </p>
       )}
       <dl className="stats-dl">
         <div><dt>Status</dt><dd>{detail.run.status}</dd></div>
         <div><dt>Topic</dt><dd>{detail.run.topic_slug}</dd></div>
         <div>
-          <dt>Flow</dt>
+          <dt>Desk</dt>
           <dd>
             {detail.run.flow_path ? (
               <Link to={`/flows/edit?path=${encodeURIComponent(detail.run.flow_path)}`}>
@@ -184,8 +185,8 @@ export default function RunDetailPage() {
             )}
           </dd>
         </div>
-        <div><dt>Current step</dt><dd>{detail.run.current_step ?? "—"}</dd></div>
-        <div><dt>Review round</dt><dd>{detail.run.review_round}</dd></div>
+        <div><dt>Current step</dt><dd>{detail.run.current_step ? stepRoleLabel(detail.run.current_step) : "—"}</dd></div>
+        <div><dt>Editor round</dt><dd>{detail.run.review_round}</dd></div>
         <div><dt>Model</dt><dd>{detail.run.selected_model || "—"}</dd></div>
         <div><dt>Puller</dt><dd>{detail.run.selected_puller || "—"}</dd></div>
         {detail.run.status === "completed" && (
@@ -202,7 +203,7 @@ export default function RunDetailPage() {
         )}
         {detail.run.flow_version_id != null && (
           <div>
-            <dt>Flow version</dt>
+            <dt>Desk version</dt>
             <dd>
               {detail.run.flow_path ? (
                 <Link

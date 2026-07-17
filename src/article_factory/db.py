@@ -34,6 +34,8 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("flow_version_id", "INTEGER"),
         ("topic_queue_snapshot_id", "INTEGER"),
         ("first_pass_accept", "INTEGER"),
+        ("shift_plan_id", "INTEGER"),
+        ("shift_assignment_id", "INTEGER"),
     ],
     "flow_queues": [
         ("flow_version_id", "INTEGER"),

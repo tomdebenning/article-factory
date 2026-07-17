@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type DurationStats, type FactoryStats } from "../api";
 import { formatDuration } from "../utils/stepStats";
+import { stepRoleLabel } from "../utils/stepRoleLabels";
 
 function StatsSummary({ summary }: { summary: DurationStats }) {
   return (
@@ -64,7 +65,11 @@ function StatsTable({
             {rows.map((row, index) => (
               <tr key={`${title}-${index}`}>
                 {columns.map((column) => (
-                  <td key={column.key}>{String(row[column.key] ?? "—")}</td>
+                  <td key={column.key}>
+                    {column.key === "step_key"
+                      ? stepRoleLabel(String(row[column.key] ?? ""))
+                      : String(row[column.key] ?? "—")}
+                  </td>
                 ))}
                 <td>{row.count}</td>
                 <td>{formatDuration(row.total_duration_ms as number)}</td>
@@ -159,7 +164,7 @@ export default function StatsPage() {
                   <tr key={row.step_execution_id}>
                     <td>{row.completed_at ? new Date(row.completed_at).toLocaleString() : "—"}</td>
                     <td className="stats-prompt-cell">{row.prompt}</td>
-                    <td>{row.step_key}</td>
+                    <td>{stepRoleLabel(row.step_key)}</td>
                     <td>{row.puller}</td>
                     <td>{row.model}</td>
                     <td>{formatDuration(row.duration_ms)}</td>

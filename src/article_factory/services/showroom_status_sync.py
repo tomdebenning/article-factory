@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from article_factory.cms_client import CmsClient
 from article_factory.config import settings
 from article_factory.control_plane.client import ControlPlaneClient
-from article_factory.models import FactoryRun, TopicQueueItem
+from article_factory.models import FactoryRun, ShiftAssignment, TopicQueueItem
 from article_factory.orchestrator.pipeline import push_factory_status
 from article_factory.services.factory_identity import load_factory_identity
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
@@ -57,7 +57,7 @@ async def _pullers_system_meta(db: Session) -> dict[str, Any] | None:
 
 async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:
     running = _active_runs(db)
-    queue_depth = db.query(TopicQueueItem).filter_by(status="queued").count()
+    queue_depth = db.query(ShiftAssignment).filter_by(status="pending").count()
     system_meta = await _pullers_system_meta(db)
     await push_factory_status(
         cms,

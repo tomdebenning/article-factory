@@ -90,8 +90,9 @@ def test_migrate_file_presets_to_db(configured_db, tmp_path, monkeypatch) -> Non
         db.close()
 
 
-def test_start_flow_queue_api(client, api_headers, configured_db) -> None:
+def test_save_shift_plan_stores_preset(client, api_headers, configured_db) -> None:
     from article_factory.services.runtime_settings import update_factory_settings
+    from article_factory.services.shift_windows import today_and_tomorrow_shift_windows
     import article_factory.db as db_module
 
     db = db_module.SessionLocal()
@@ -104,21 +105,28 @@ def test_start_flow_queue_api(client, api_headers, configured_db) -> None:
     finally:
         db.close()
 
+    window = today_and_tomorrow_shift_windows()[0]
     response = client.post(
-        "/api/flow-queues/start",
+        "/api/shifts/plans/save",
         headers=api_headers,
         json={
-            "name": "Launch queue",
-            "flow_path": "sports/standard-4-step.flow.json",
-            "topic_slug": "sports",
+            "window_key": window.window_key,
             "default_model": "test-model",
-            "topics": ["Topic A", "Topic B"],
+            "desks": [
+                {
+                    "desk_path": "sports/standard-4-step.flow.json",
+                    "topic_slug": "sports",
+                    "name": "Launch queue",
+                }
+            ],
+            "assignments_by_desk_index": {"0": ["Topic A", "Topic B"]},
             "save_preset": True,
+            "preset_name": "Launch queue",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
-    assert body["enqueued"] == 2
+    assert body["plan"]["assignment_total"] == 2
     assert body["preset"]["slug"] == "launch-queue"
 
     presets = client.get("/api/flow-queues/presets", headers=api_headers)

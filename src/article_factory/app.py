@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from article_factory.config import settings
 from article_factory.db import init_db
-from article_factory.models import FactoryRun, TopicQueueItem
+from article_factory.models import FactoryRun, ShiftAssignment, TopicQueueItem
 from article_factory.orchestrator.runner import factory_loop
 from article_factory.routes.admin import router as admin_router
 from article_factory.routes.auth import router as auth_router
@@ -19,6 +19,7 @@ from article_factory.routes.flow_performance import router as flow_performance_r
 from article_factory.routes.telemetry import router as telemetry_router
 from article_factory.routes.prompt_improvement import router as prompt_improvement_router
 from article_factory.routes.personas import router as personas_router
+from article_factory.routes.shifts import router as shifts_router
 from article_factory.services.flow_queues import ensure_default_flow_queue
 from article_factory.services.flow_storage import ensure_default_flows
 from article_factory.services.queue_presets import migrate_file_presets_to_db
@@ -62,10 +63,10 @@ async def lifespan(app: FastAPI):
                 .first()
             )
             queue_counts = {
-                "queued": db.query(TopicQueueItem).filter_by(status="queued").count(),
-                "running": db.query(TopicQueueItem).filter_by(status="running").count(),
-                "completed": db.query(TopicQueueItem).filter_by(status="completed").count(),
-                "failed": db.query(TopicQueueItem).filter_by(status="failed").count(),
+                "queued": db.query(ShiftAssignment).filter_by(status="pending").count(),
+                "running": db.query(ShiftAssignment).filter_by(status="running").count(),
+                "completed": db.query(ShiftAssignment).filter_by(status="completed").count(),
+                "failed": db.query(ShiftAssignment).filter_by(status="failed").count(),
             }
             readiness = await assess_factory_readiness(
                 runtime=runtime,
@@ -130,4 +131,5 @@ def create_app() -> FastAPI:
     app.include_router(telemetry_router)
     app.include_router(prompt_improvement_router)
     app.include_router(personas_router)
+    app.include_router(shifts_router)
     return app

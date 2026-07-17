@@ -195,6 +195,7 @@ export type RunningGroup = {
 export type ActiveOverview = {
   running_groups: RunningGroup[];
   history_runs: RunSummary[];
+  active_shift?: ShiftPlanSummary | null;
 };
 
 export type RunStepFile = {
@@ -227,6 +228,53 @@ export type FlowQueueSummary = {
   created_at: string | null;
   counts: FlowQueueCounts;
   active_run_id: string | null;
+};
+
+export type ShiftAssignmentCounts = {
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+};
+
+export type ShiftDeskSlotSummary = {
+  id: number;
+  shift_plan_id: number;
+  name: string;
+  desk_path: string;
+  topic_slug: string;
+  flow_version_id?: number | null;
+  dispatch_order: number;
+  assignment_counts: ShiftAssignmentCounts;
+  assignment_total: number;
+  assignments?: Array<{
+    id: number;
+    prompt: string;
+    status: string;
+    priority: number;
+    run_id?: string | null;
+  }>;
+};
+
+export type ShiftPlanSummary = {
+  id: number;
+  shift_key: string;
+  window_starts_at: string;
+  window_ends_at: string;
+  status: "draft" | "active" | "complete" | string;
+  default_model: string;
+  assignment_counts: ShiftAssignmentCounts;
+  assignment_total: number;
+  desks: ShiftDeskSlotSummary[];
+};
+
+export type ShiftBoardWindow = {
+  window_key: string;
+  shift_key: string;
+  label: string;
+  window_starts_at: string;
+  window_ends_at: string;
+  plan: ShiftPlanSummary | null;
 };
 
 export type Persona = {
@@ -1117,6 +1165,29 @@ export const api = {
       `/api/articles/${runId}/workspace-files/${encodeURIComponent(filePath)}`,
     ),
   listPersonas: () => request<{ personas: Persona[] }>("/api/personas"),
+  getShiftBoard: () => request<{ windows: ShiftBoardWindow[] }>("/api/shifts/board"),
+  ensureShiftPlan: (window_key: string) =>
+    request<{ plan: ShiftPlanSummary }>("/api/shifts/plans/ensure", {
+      method: "POST",
+      body: JSON.stringify({ window_key }),
+    }),
+  saveShiftPlan: (body: {
+    window_key: string;
+    default_model: string;
+    desks: Array<{ desk_path: string; topic_slug: string; name?: string; flow_version_id?: number | null }>;
+    assignments_by_desk_index: Record<string, string[]>;
+    save_preset?: boolean;
+    preset_name?: string;
+    preset_slug?: string;
+  }) =>
+    request<{ plan: ShiftPlanSummary; message: string; preset?: QueuePresetSummary | null }>(
+      "/api/shifts/plans/save",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  activateShiftPlan: (planId: number) =>
+    request<{ plan: ShiftPlanSummary; message: string }>(`/api/shifts/plans/${planId}/activate`, {
+      method: "POST",
+    }),
   getPersona: (slug: string) => request<{ persona: Persona }>(`/api/personas/${encodeURIComponent(slug)}`),
   createPersona: (body: Pick<Persona, "name" | "description" | "style_prompt"> & { slug?: string }) =>
     request<{ persona: Persona }>("/api/personas", { method: "POST", body: JSON.stringify(body) }),

@@ -122,8 +122,8 @@ function RunningTab({
   if (groups.length === 0) {
     return (
       <p className="hint">
-        No queues are running right now. Start one from{" "}
-        <Link to="/start-flows">Start flows</Link>.
+        No assignments are running right now. Plan and activate a shift from the{" "}
+        <Link to="/shifts">shift board</Link>.
       </p>
     );
   }
@@ -141,7 +141,7 @@ function RunningTab({
               <div className="active-group-heading">
                 <strong>{group.queue_name}</strong>
                 <span className="hint active-group-meta">
-                  {group.model} · {group.flow_path || "No flow"}
+                  {group.model} · {group.flow_path || "No desk"}
                 </span>
               </div>
               <span className="active-group-counts">
@@ -152,7 +152,7 @@ function RunningTab({
                 )}
                 {group.queued_count > 0 && (
                   <span className="queue-status-badge status-queued">
-                    {group.queued_count} queued
+                    {group.queued_count} pending
                   </span>
                 )}
               </span>
@@ -171,7 +171,7 @@ function RunningTab({
                 </div>
               )}
               {group.runs.length === 0 ? (
-                <p className="hint">Topics are queued — waiting for an idle puller.</p>
+                <p className="hint">Assignments are pending — waiting for an idle puller.</p>
               ) : (
                 group.runs.map((run) => (
                   <RunRow
@@ -230,7 +230,7 @@ function HistoryTab({
                           <span className="disclosure-chevron" aria-hidden="true" />
                           <strong>{group.queue_name}</strong>
                           <span className="hint">
-                            {group.model} · {group.flow_path || "No flow"} · {group.runs.length} run(s)
+                            {group.model} · {group.flow_path || "No desk"} · {group.runs.length} run(s)
                           </span>
                         </summary>
                         <div className="disclosure-box-body">
@@ -378,9 +378,16 @@ export default function QueuePage() {
     <section className="card active-page">
       <h2>Active</h2>
       <p className="hint">
-        Running queues grouped by flow and model. Previous runs are organized by day and six-hour window.
-        Start new work on <Link to="/start-flows">Start flows</Link>.
+        Running work grouped by desk and model. Previous runs are organized by day and six-hour window.
+        Plan shifts on the <Link to="/shifts">shift board</Link>.
       </p>
+      {overview?.active_shift && (
+        <p className="ok">
+          Active shift: <strong>{overview.active_shift.shift_key}</strong> ·{" "}
+          {overview.active_shift.assignment_counts.running || 0} running ·{" "}
+          {overview.active_shift.assignment_counts.pending || 0} pending
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
 

@@ -44,7 +44,7 @@ export default function PersonasPage() {
     const name = draft.name.trim();
     const style_prompt = draft.style_prompt.trim();
     if (!name) {
-      setError("Enter a persona name.");
+      setError("Enter a staff member name.");
       return;
     }
     if (!style_prompt) {
@@ -78,7 +78,7 @@ export default function PersonasPage() {
   };
 
   const remove = (persona: Persona) => {
-    if (!window.confirm(`Delete persona “${persona.name}”?`)) {
+    if (!window.confirm(`Delete staff member “${persona.name}”?`)) {
       return;
     }
     setBusy(true);
@@ -98,16 +98,16 @@ export default function PersonasPage() {
 
   return (
     <section className="card personas-page">
-      <h2>Personas</h2>
+      <h2>Desk staff</h2>
       <p className="hint">
-        Personas capture writing style and tone. Later you will assign them to flow steps so their
-        instructions are merged into each step&apos;s system prompt.
+        Desk staff capture writing style and tone for reporters. In a later release you will assign them
+        to desk steps so their instructions are merged into each step&apos;s system prompt.
       </p>
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
 
       <div className="personas-editor">
-        <h3>{editingSlug ? "Edit persona" : "Create persona"}</h3>
+        <h3>{editingSlug ? "Edit staff member" : "Add staff member"}</h3>
         <label>
           Name
           <input
@@ -147,7 +147,7 @@ export default function PersonasPage() {
         </label>
         <div className="personas-editor-actions">
           <button type="button" className="primary" disabled={busy} onClick={save}>
-            {busy ? "Saving…" : editingSlug ? "Save changes" : "Create persona"}
+            {busy ? "Saving…" : editingSlug ? "Save changes" : "Add staff member"}
           </button>
           {editingSlug && (
             <button type="button" className="secondary" disabled={busy} onClick={resetDraft}>
@@ -157,9 +157,9 @@ export default function PersonasPage() {
         </div>
       </div>
 
-      <h3>Saved personas</h3>
+      <h3>Saved desk staff</h3>
       {personas.length === 0 ? (
-        <p className="hint">No personas yet. Create one above to define a writing style.</p>
+        <p className="hint">No desk staff yet. Add someone above to define a reporter voice.</p>
       ) : (
         <ul className="personas-list">
           {personas.map((persona) => (

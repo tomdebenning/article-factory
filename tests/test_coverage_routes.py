@@ -101,7 +101,7 @@ def test_flow_queues_crud_and_presets(client, api_headers, configured_db) -> Non
         headers=api_headers,
         json={"topics": [], "default_model": "", "flow_path": ""},
     )
-    assert bad_start.status_code in {400, 422}
+    assert bad_start.status_code in {400, 410, 422}
 
     deleted = client.delete(f"/api/flow-queues/{queue_id}", headers=api_headers)
     assert deleted.status_code == 200

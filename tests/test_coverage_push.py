@@ -971,7 +971,7 @@ def test_admin_and_flow_queue_routes(client, api_headers, configured_db, monkeyp
             "queue_id": 99999,
         },
     )
-    assert bad_start.status_code == 404
+    assert bad_start.status_code in {404, 410}
 
     created = client.post(
         "/api/flow-queues",

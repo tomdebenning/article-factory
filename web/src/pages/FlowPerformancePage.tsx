@@ -291,7 +291,7 @@ export default function FlowPerformancePage() {
       <section className="panel">
         <h2>Prompt performance</h2>
         <p className="hint">Open this page from a flow in the library or editor.</p>
-        <Link to="/flows">Flow library</Link>
+        <Link to="/flows">Desks</Link>
       </section>
     );
   }
@@ -309,7 +309,7 @@ export default function FlowPerformancePage() {
           <Link to={`/flows/edit?path=${encodeURIComponent(path)}`} className="secondary">
             Edit prompts
           </Link>
-          <Link to="/flows">Flow library</Link>
+          <Link to="/flows">Desks</Link>
         </div>
       </div>
 
@@ -543,7 +543,7 @@ export default function FlowPerformancePage() {
         <section className="flow-performance-empty">
           <p>No runs recorded for this flow yet.</p>
           <p className="hint">
-            Start a topic queue batch from <Link to="/start-flows">Start flows</Link>, then return here.
+            Start a roster from <Link to="/start-flows">Plan a shift</Link>, then return here.
             Save a flow version after prompt changes to track performance by version.
           </p>
         </section>

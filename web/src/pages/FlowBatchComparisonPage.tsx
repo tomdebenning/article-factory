@@ -118,7 +118,7 @@ export default function FlowBatchComparisonPage() {
               Prompt performance
             </Link>
           )}
-          <Link to="/flows">Flow library</Link>
+          <Link to="/flows">Desks</Link>
         </div>
       </div>
 

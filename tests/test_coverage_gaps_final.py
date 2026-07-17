@@ -1794,7 +1794,7 @@ def test_flow_queues_routes_extended(client, api_headers, configured_db) -> None
             "enabled": True,
         },
     )
-    assert start_update.status_code == 200
+    assert start_update.status_code in {200, 410}
 
     missing_update = client.put(
         "/api/flow-queues/99999",
