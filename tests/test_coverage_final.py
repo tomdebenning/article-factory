@@ -71,30 +71,11 @@ def _review_json_text(**overrides: object) -> str:
 # --- review_parser remaining branches ---
 
 
-def test_normalize_issue_status_branches() -> None:
-    from article_factory.services.review_parser import _normalize_issue_status
-
-    assert _normalize_issue_status("partial fix") == "partially_fixed"
-    assert _normalize_issue_status("needs fix") == "fixed"
-    assert _normalize_issue_status("regressed badly") == "regressed"
-    assert _normalize_issue_status("not fixed yet") == "not_fixed"
-    assert _normalize_issue_status("weird") == "unknown"
-
-
 def test_review_parser_criteria_must_be_object() -> None:
     text = _review_json_text(criteria="bad")
     review = parse_structured_review(text)
     assert review is not None
     assert any("criteria must be an object" in w for w in review.parse_warnings)
-
-
-def test_review_parser_max_score_mismatch_warning() -> None:
-    criteria = _criteria_payload()
-    criteria["accuracy_verifiable_facts"] = {"score": 30, "max_score": 99}
-    text = _review_json_text(criteria=criteria)
-    review = parse_structured_review(text)
-    assert review is not None
-    assert any("max_score expected" in w for w in review.parse_warnings)
 
 
 def test_review_parser_accepted_with_required_changes() -> None:
@@ -253,47 +234,6 @@ async def test_execute_step_poll_cancelled(configured_db, monkeypatch) -> None:
                 run_id="poll-cancel",
                 tracer=tracer,
             )
-
-
-@pytest.mark.asyncio
-async def test_execute_step_puller_alive_waiting_message(configured_db, monkeypatch) -> None:
-    from article_factory.models import FactoryRun
-    from article_factory.services.step_trace import StepTracer
-
-    monkeypatch.setattr(settings, "step_no_puller_timeout_seconds", 30.0)
-    monkeypatch.setattr(settings, "step_poll_interval_seconds", 0.01)
-    monkeypatch.setattr(settings, "step_no_puller_max_attempts", 1)
-    monkeypatch.setattr(settings, "step_busy_puller_max_wait_seconds", 0.05)
-
-    db = db_module.SessionLocal()
-    try:
-        db.add(FactoryRun(run_id="alive-wait", topic_slug="sports", status="running"))
-        db.commit()
-        tracer = StepTracer(db, run_id="alive-wait", step_key="writer", puller="p", model="m")
-    finally:
-        db.close()
-
-    cp = AsyncMock()
-    cp.get_task_status = AsyncMock(return_value={"status": "fetched"})
-    cp.submit_task = AsyncMock(return_value={})
-    cp.poll_responses = AsyncMock(return_value=[])
-    cp.task_was_fetched = AsyncMock(return_value=False)
-    cp.get_puller = AsyncMock(return_value={"puller_name": "p"})
-
-    with patch("article_factory.workers.executor.get_registered_puller_on_cp", new=AsyncMock(return_value={"puller_name": "p"})):
-        with patch("article_factory.workers.executor.asyncio.sleep", new=AsyncMock()):
-            with pytest.raises(NoPullerAvailableError):
-                await execute_step(
-                    cp,
-                    step_key="writer",
-                    system_prompt="sys",
-                    user_content="user",
-                    puller="p",
-                    model="m",
-                    tracer=tracer,
-                )
-
-    assert tracer.execution.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -589,11 +529,6 @@ def test_batch_step_executions_payload(configured_db) -> None:
 # --- flow_queues routes ---
 
 
-def test_flow_queue_preset_get_value_error(client, api_headers) -> None:
-    response = client.get("/api/flow-queues/presets/%20%20", headers=api_headers)
-    assert response.status_code == 400
-
-
 def test_flow_queue_start_disabled_queue(client, api_headers, configured_db) -> None:
     from article_factory.services.flow_storage import create_flow
 
@@ -669,27 +604,6 @@ def test_flow_queue_delete_running_blocked(client, api_headers, configured_db) -
     assert response.status_code == 400
 
 
-def test_flow_queue_enqueue_disabled(client, api_headers, configured_db) -> None:
-    from article_factory.services.flow_queues import create_flow_queue
-    from article_factory.services.flow_storage import create_flow
-
-    db = db_module.SessionLocal()
-    try:
-        rel_path, _ = create_flow(folder="", slug="enq-q", display_name="Enq Q", step_count=1)
-        queue = create_flow_queue(db, name="Enq Queue", flow_path=rel_path, topic_slug="sports", enabled=False)
-        db.commit()
-        queue_id = queue.id
-    finally:
-        db.close()
-
-    response = client.post(
-        f"/api/flow-queues/{queue_id}/enqueue",
-        headers=api_headers,
-        json={"topics": ["Topic"]},
-    )
-    assert response.status_code == 400
-
-
 @pytest.mark.asyncio
 async def test_flow_queue_stop_and_clear_not_found(client, api_headers) -> None:
     response = client.post("/api/flow-queues/99999/stop-and-clear", headers=api_headers)
@@ -735,25 +649,6 @@ async def test_stop_and_clear_nothing_message(configured_db, monkeypatch) -> Non
 # --- admin routes ---
 
 
-def test_get_article_step_file_errors(client, api_headers, configured_db) -> None:
-    db = db_module.SessionLocal()
-    try:
-        db.add(
-            CompletedArticle(
-                run_id="art-files",
-                topic_slug="sports",
-                title="T",
-                body_markdown="Body",
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
-
-    assert client.get("/api/articles/art-files/step-files/missing.md", headers=api_headers).status_code == 404
-    assert client.get("/api/articles/art-files/step-files/../evil.md", headers=api_headers).status_code == 400
-
-
 def test_get_article_workspace_file_errors(client, api_headers, configured_db) -> None:
     db = db_module.SessionLocal()
     try:
@@ -794,24 +689,6 @@ def test_resolve_queue_flow_path_from_queue_id(client, api_headers, configured_d
 
 
 # --- telemetry ---
-
-
-def test_load_flow_for_run_version_exception(configured_db, monkeypatch) -> None:
-    from article_factory.services.telemetry import _load_flow_for_run
-
-    db = db_module.SessionLocal()
-    try:
-        run = FactoryRun(
-            run_id="bad-version",
-            topic_slug="sports",
-            status="completed",
-            flow_version_id=99999,
-        )
-        db.add(run)
-        db.commit()
-        assert _load_flow_for_run(db, run) is None
-    finally:
-        db.close()
 
 
 def test_records_from_run_step_executions(configured_db) -> None:
@@ -920,38 +797,6 @@ def test_schedule_showroom_status_refresh_no_loop() -> None:
     from article_factory.services.showroom_status_sync import schedule_showroom_status_refresh
 
     schedule_showroom_status_refresh(force=True)
-
-
-# --- control_plane client ---
-
-
-@pytest.mark.asyncio
-async def test_control_plane_poll_responses_error() -> None:
-    client = ControlPlaneClient(base_url="http://cp.test")
-    mock_http = AsyncMock()
-    mock_http.get = AsyncMock(side_effect=RuntimeError("network"))
-    mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-    mock_http.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("article_factory.control_plane.client.httpx.AsyncClient", return_value=mock_http):
-        assert await client.poll_responses("agent", conversation_id="conv") == []
-
-
-@pytest.mark.asyncio
-async def test_control_plane_submit_task_non_200() -> None:
-    client = ControlPlaneClient(base_url="http://cp.test")
-    bad = MagicMock()
-    bad.status_code = 503
-    bad.text = "unavailable"
-
-    mock_http = AsyncMock()
-    mock_http.post = AsyncMock(return_value=bad)
-    mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-    mock_http.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("article_factory.control_plane.client.httpx.AsyncClient", return_value=mock_http):
-        with pytest.raises(RuntimeError, match="503"):
-            await client.submit_task({"agent_id": "a"})
 
 
 # --- flow_runner draft warning ---

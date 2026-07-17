@@ -183,13 +183,16 @@ async def _poll_step_response(
         else:
             response_polls += 1
             elapsed = (now - fetched_at) if fetched_at is not None else 0.0
+            timed_out = elapsed >= response_timeout or response_polls > max_response_polls
+            if timed_out and not puller_alive:
+                return None, True, "timeout", puller_was_alive, task_status
             if puller_alive or cp_status in {"fetched", "completed", "failed"}:
                 if tracer and response_polls == 1:
                     tracer.record_activity("Waiting for puller response", cp_round=round_num)
             elif puller_was_alive:
                 if (now - last_puller_alive_at) >= stale_grace:
                     return None, True, "timeout", puller_was_alive, task_status
-            elif elapsed >= response_timeout or response_polls > max_response_polls:
+            elif timed_out:
                 return None, True, "timeout", puller_was_alive, task_status
             elif tracer and response_polls == 1:
                 tracer.record_activity("Waiting for puller response", cp_round=round_num)

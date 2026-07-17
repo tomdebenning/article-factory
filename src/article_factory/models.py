@@ -76,6 +76,23 @@ class TopicQueueItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class StandingOrder(Base):
+    """Recurring roster template for a desk on a shift (Assignment Desk Level 2)."""
+
+    __tablename__ = "standing_orders"
+    __table_args__ = (UniqueConstraint("desk_path", "shift_key", name="uq_standing_orders_desk_shift"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    desk_path: Mapped[str] = mapped_column(String(256), index=True)
+    shift_key: Mapped[str] = mapped_column(String(16), index=True)
+    topics: Mapped[list[str]] = mapped_column(JSON, default=list)
+    target_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
 class ShiftPlan(Base):
     """One planned shift window — desks and assignments dispatch while active."""
 
@@ -88,6 +105,9 @@ class ShiftPlan(Base):
     window_ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     default_model: Mapped[str] = mapped_column(String(128), default="")
+    roster_review_status: Mapped[str] = mapped_column(String(16), default="none", index=True)
+    roster_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    t15_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -121,6 +141,8 @@ class ShiftAssignment(Base):
     priority: Mapped[int] = mapped_column(Integer, default=100)
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     reporter_persona_slug: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(16), default="manual", index=True)
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

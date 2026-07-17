@@ -13,6 +13,12 @@ function statusLabel(window: ShiftBoardWindow): string {
   if (plan.status === "complete") {
     return "Complete";
   }
+  if (plan.roster_review_status === "pending") {
+    return "Review roster";
+  }
+  if (plan.roster_review_status === "ready") {
+    return "Roster ready";
+  }
   if (plan.assignment_total > 0) {
     return "Draft";
   }
@@ -76,6 +82,7 @@ export default function ShiftsBoardPage() {
         {windows.map((window) => {
           const plan = window.plan;
           const canActivate = plan && plan.status === "draft" && plan.assignment_total > 0;
+          const needsReview = plan?.roster_review_status === "pending";
           return (
             <article key={window.window_key} className="card shifts-board-card">
               <header className="shifts-board-card-head">
@@ -85,6 +92,11 @@ export default function ShiftsBoardPage() {
                 </span>
               </header>
               <p className="hint">{progressText(window)}</p>
+              {needsReview && (
+                <p className="ok">
+                  Assignment Desk generated a roster — review before the shift goes live.
+                </p>
+              )}
               {plan && plan.desks.length > 0 && (
                 <ul className="shifts-board-desks">
                   {plan.desks.map((desk) => (
@@ -98,6 +110,11 @@ export default function ShiftsBoardPage() {
                 </ul>
               )}
               <div className="shifts-board-actions">
+                {needsReview && plan && (
+                  <Link to={`/shifts/review/${plan.id}`} className="primary">
+                    Review roster
+                  </Link>
+                )}
                 {plan?.status !== "complete" && (
                   <Link
                     to={`/start-flows?window_key=${encodeURIComponent(window.window_key)}`}

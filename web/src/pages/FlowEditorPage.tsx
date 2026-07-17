@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type FlowDefinition, type FlowStep } from "../api";
 import FlowMoveForm from "../components/FlowMoveForm";
+import StandingOrdersPanel from "../components/StandingOrdersPanel";
 import { downloadFlowJson } from "../utils/flowFiles";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
 
@@ -263,6 +264,25 @@ export default function FlowEditorPage() {
         Display name
         <input value={flow.display_name} onChange={(e) => setFlow({ ...flow, display_name: e.target.value })} />
       </label>
+
+      {!readOnlyVersion && (
+        <div className="step-card flow-reporter-pool-card">
+          <h3>Beat brief</h3>
+          <p className="hint">
+            Mission statement for this desk — the Assignment Desk uses it when suggesting story topics at T-15.
+          </p>
+          <textarea
+            rows={4}
+            value={flow.beat_brief || ""}
+            onChange={(e) => setFlow({ ...flow, beat_brief: e.target.value })}
+            placeholder="e.g. Cover college sports in the Pacific Northwest with emphasis on game recaps and athlete profiles."
+          />
+        </div>
+      )}
+
+      {!readOnlyVersion && !isTemplateFlowPath(path) && (
+        <StandingOrdersPanel deskPath={path} />
+      )}
 
       {!readOnlyVersion && (
         <div className="step-card flow-reporter-pool-card">

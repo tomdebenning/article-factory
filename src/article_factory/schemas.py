@@ -232,6 +232,25 @@ class ShiftPlanSaveBody(BaseModel):
     default_model: str = ""
     desks: list[ShiftDeskSlotBody] = Field(default_factory=list)
     assignments_by_desk_index: dict[str, list[str]] = Field(default_factory=dict)
+    locked_by_desk_index: dict[str, list[bool]] = Field(default_factory=dict)
     save_preset: bool = False
     preset_name: str = ""
     preset_slug: str = ""
+
+
+class StandingOrderBody(BaseModel):
+    desk_path: str
+    shift_key: str
+    topics: list[str] = Field(default_factory=list)
+    target_count: int | None = None
+
+
+class RosterAssignmentUpdate(BaseModel):
+    id: int
+    prompt: str | None = None
+    locked: bool | None = None
+    promote_to_manual: bool = False
+
+
+class RosterReviewBody(BaseModel):
+    assignments: list[RosterAssignmentUpdate] = Field(default_factory=list)

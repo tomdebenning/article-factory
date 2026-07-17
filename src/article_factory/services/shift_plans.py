@@ -60,6 +60,8 @@ def _desk_payload(db: Session, slot: ShiftDeskSlot) -> dict[str, Any]:
                 "status": row.status,
                 "priority": row.priority,
                 "run_id": row.run_id,
+                "source": row.source,
+                "locked": bool(row.locked),
             }
             for row in rows
         ],
@@ -81,6 +83,9 @@ def shift_plan_payload(db: Session, plan: ShiftPlan) -> dict[str, Any]:
         "window_ends_at": plan.window_ends_at.isoformat(),
         "status": plan.status,
         "default_model": plan.default_model,
+        "roster_review_status": plan.roster_review_status,
+        "roster_generated_at": plan.roster_generated_at.isoformat() if plan.roster_generated_at else None,
+        "t15_applied_at": plan.t15_applied_at.isoformat() if plan.t15_applied_at else None,
         "created_at": plan.created_at.isoformat() if plan.created_at else None,
         "activated_at": plan.activated_at.isoformat() if plan.activated_at else None,
         "completed_at": plan.completed_at.isoformat() if plan.completed_at else None,
@@ -182,6 +187,8 @@ def replace_desk_assignments(
     desk_slot_id: int,
     prompts: list[str],
     priority: int = 100,
+    source: str = "manual",
+    locked_flags: list[bool] | None = None,
 ) -> list[ShiftAssignment]:
     slot = db.get(ShiftDeskSlot, desk_slot_id)
     if slot is None:
@@ -201,16 +208,22 @@ def replace_desk_assignments(
     db.query(ShiftAssignment).filter_by(shift_desk_slot_id=slot.id).delete(
         synchronize_session=False
     )
+    cleaned_source = source if source in {"standing", "ai_suggested", "manual"} else "manual"
     created: list[ShiftAssignment] = []
     for index, line in enumerate(prompts):
         prompt = line.strip()
         if not prompt:
             continue
+        locked = False
+        if locked_flags is not None and index < len(locked_flags):
+            locked = bool(locked_flags[index])
         row = ShiftAssignment(
             shift_desk_slot_id=slot.id,
             prompt=prompt,
             priority=priority + index,
             status="pending",
+            source=cleaned_source,
+            locked=locked,
         )
         db.add(row)
         created.append(row)
@@ -303,6 +316,8 @@ def list_assignments_for_desk(db: Session, desk_slot_id: int) -> list[dict[str, 
             "status": row.status,
             "priority": row.priority,
             "run_id": row.run_id,
+            "source": row.source,
+            "locked": bool(row.locked),
             "dispatched_at": row.dispatched_at.isoformat() if row.dispatched_at else None,
             "finished_at": row.finished_at.isoformat() if row.finished_at else None,
         }

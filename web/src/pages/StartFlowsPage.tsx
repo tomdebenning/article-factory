@@ -143,10 +143,6 @@ export default function StartFlowsPage() {
       assignments_by_desk_index[String(index)] = desk.topics;
     });
     const totalAssignments = cleanedDesks.reduce((sum, desk) => sum + desk.topics.length, 0);
-    if (totalAssignments < 1) {
-      setError("Add at least one assignment across the staffed desks.");
-      return;
-    }
 
     setBusy(true);
     setError(null);
@@ -183,6 +179,7 @@ export default function StartFlowsPage() {
       {boardWindow ? (
         <p className="hint">
           Staffing <strong>{boardWindow.label}</strong>. Save the plan, then activate it from the shift board.
+          Assignments can be left empty — the Assignment Desk fills rosters from standing orders at T-15.
         </p>
       ) : (
         <p className="hint">Pick a shift window from the shift board to begin.</p>

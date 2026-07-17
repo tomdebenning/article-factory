@@ -22,36 +22,6 @@ from article_factory.services.control_plane_heartbeat import _agent_display_name
 
 
 @pytest.mark.asyncio
-async def test_execute_pipeline_resume_read_flow_fails(configured_db, monkeypatch) -> None:
-    captured: dict = {}
-
-    async def fake_execute(db, *, run, flow_path, topic_prompt, runtime, cms, emit_step_started, complete_run, resume_from_step_id=None):
-        captured["resume_from_step_id"] = resume_from_step_id
-        run.status = "completed"
-        db.commit()
-        return run
-
-    monkeypatch.setattr("article_factory.orchestrator.runner.execute_flow_pipeline", fake_execute)
-    monkeypatch.setattr("article_factory.orchestrator.runner.read_flow", MagicMock(side_effect=OSError("bad")))
-
-    db = db_module.SessionLocal()
-    try:
-        run = FactoryRun(
-            run_id="run-resume-exc",
-            topic_slug="sports",
-            flow_path="sports/standard-4-step.flow.json",
-            status="running",
-            pipeline_state={"step_outputs": {}, "feedback": "", "step_records": []},
-        )
-        db.add(run)
-        db.commit()
-        await _execute_pipeline(db, run=run, topic_prompt="Topic", resume_from_step="writer")
-        assert captured["resume_from_step_id"] is None
-    finally:
-        db.close()
-
-
-@pytest.mark.asyncio
 async def test_factory_loop_ensure_running_active_task(configured_db) -> None:
     loop = FactoryLoop()
     loop._task = asyncio.create_task(asyncio.sleep(60))

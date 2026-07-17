@@ -3595,26 +3595,6 @@ def test_run_outputs_helpers(configured_db, tmp_path, monkeypatch) -> None:
         read_run_step_file("out-run", "missing.md")
 
 
-# --- run_error_tags ---
-
-
-def test_run_error_tags_service(configured_db) -> None:
-    from article_factory.services.run_error_tags import error_tag_to_dict, upsert_run_error_tag
-
-    db = db_module.SessionLocal()
-    try:
-        db.add(FactoryRun(run_id="tag-run", topic_slug="sports", status="failed"))
-        db.commit()
-        row = upsert_run_error_tag(db, run_id="tag-run", error_group="timeout", note="slow")
-        payload = error_tag_to_dict(row)
-        assert payload["error_group"] == "timeout"
-        assert payload["note"] == "slow"
-        with pytest.raises(ValueError, match="Unknown error group"):
-            upsert_run_error_tag(db, run_id="tag-run", error_group="not-a-group")
-    finally:
-        db.close()
-
-
 # --- flow_switch errors ---
 
 

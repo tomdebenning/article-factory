@@ -12,6 +12,12 @@ from article_factory.schemas import (
     ShiftPlanEnsureBody,
     ShiftPlanSaveBody,
     ShiftPlanSettingsBody,
+    RosterReviewBody,
+)
+from article_factory.services.assignment_desk import (
+    approve_roster,
+    reject_ai_suggestions,
+    update_roster_assignments,
 )
 from article_factory.services.queue_presets import write_queue_preset
 from article_factory.services.runtime_settings import update_factory_settings
@@ -175,15 +181,21 @@ def save_shift_plan(body: ShiftPlanSaveBody, db: Session = Depends(get_db)) -> d
             reporter_selection_mode=desk_body.reporter_selection_mode,
         )
         prompts = body.assignments_by_desk_index.get(str(index), [])
+        locked_flags = body.locked_by_desk_index.get(str(index), [])
         if prompts:
-            replace_desk_assignments(db, desk_slot_id=slot.id, prompts=prompts)
+            replace_desk_assignments(
+                db,
+                desk_slot_id=slot.id,
+                prompts=prompts,
+                locked_flags=locked_flags or None,
+            )
             all_prompts.extend([line.strip() for line in prompts if line.strip()])
 
-    if not all_prompts:
-        raise HTTPException(status_code=400, detail="Add at least one assignment before saving.")
+    if not all_prompts and not body.desks:
+        raise HTTPException(status_code=400, detail="Add at least one desk.")
 
     preset = None
-    if body.save_preset and body.desks:
+    if body.save_preset and body.desks and all_prompts:
         first = body.desks[0]
         preset = write_queue_preset(
             db,
@@ -202,5 +214,62 @@ def save_shift_plan(body: ShiftPlanSaveBody, db: Session = Depends(get_db)) -> d
     return {
         "plan": shift_plan_payload(db, plan),
         "preset": preset,
-        "message": f"Saved shift plan with {len(all_prompts)} assignment(s).",
+        "message": (
+            f"Saved shift plan with {len(all_prompts)} assignment(s)."
+            if all_prompts
+            else "Saved shift plan — assignments will be generated at T-15."
+        ),
     }
+
+
+@router.patch("/plans/{plan_id}/roster")
+def patch_roster_review(
+    plan_id: int,
+    body: RosterReviewBody,
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        get_shift_plan(db, plan_id)
+        if body.assignments:
+            update_roster_assignments(
+                db,
+                plan_id=plan_id,
+                updates=[item.model_dump() for item in body.assignments],
+            )
+        db.commit()
+        plan = get_shift_plan(db, plan_id)
+        return {"plan": shift_plan_payload(db, plan)}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/plans/{plan_id}/roster/approve")
+def post_roster_approve(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        plan = approve_roster(db, plan_id=plan_id)
+        db.commit()
+        return {"plan": shift_plan_payload(db, plan), "message": "Roster approved."}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/plans/{plan_id}/roster/reject-ai")
+def post_roster_reject_ai(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        get_shift_plan(db, plan_id)
+        removed = reject_ai_suggestions(db, plan_id=plan_id)
+        db.commit()
+        plan = get_shift_plan(db, plan_id)
+        return {
+            "plan": shift_plan_payload(db, plan),
+            "removed": removed,
+            "message": f"Removed {removed} AI suggestion(s).",
+        }
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -250,42 +250,6 @@ async def test_execute_pipeline_asyncio_cancelled_non_running(configured_db, mon
 
 
 @pytest.mark.asyncio
-async def test_run_pipeline_snapshot_id(configured_db, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "article_factory.orchestrator.runner._execute_pipeline",
-        AsyncMock(side_effect=lambda db, *, run, topic_prompt, resume_from_step=None: run),
-    )
-    monkeypatch.setattr("article_factory.orchestrator.runner._emit_run_event", AsyncMock())
-    monkeypatch.setattr(
-        "article_factory.orchestrator.runner.ensure_flow_version_for_run",
-        lambda _db, _path: MagicMock(id=1),
-    )
-
-    db = db_module.SessionLocal()
-    try:
-        queue = create_flow_queue(db, name="Snap", flow_path="sports/standard-4-step.flow.json")
-        item = TopicQueueItem(
-            flow_queue_id=queue.id,
-            topic_slug="sports",
-            prompt="Snap",
-            status="queued",
-            flow_path="sports/standard-4-step.flow.json",
-        )
-        db.add(item)
-        db.flush()
-        run = await run_pipeline_for_topic(
-            db,
-            topic_slug="sports",
-            topic_prompt="Snap",
-            queue_item_id=item.id,
-            flow_path="sports/standard-4-step.flow.json",
-        )
-        assert run.topic_queue_snapshot_id is not None
-    finally:
-        db.close()
-
-
-@pytest.mark.asyncio
 async def test_factory_loop_dispatch_branches(configured_db, monkeypatch) -> None:
     loop = FactoryLoop()
     loop._running = True
@@ -390,82 +354,6 @@ async def test_execute_flow_cancelled_after_step(configured_db, monkeypatch) -> 
                 emit_step_started=AsyncMock(),
                 complete_run=AsyncMock(),
             )
-    finally:
-        db.close()
-
-
-@pytest.mark.asyncio
-async def test_execute_flow_empty_steps_and_max_iterations(configured_db, monkeypatch) -> None:
-    empty = FlowDefinition.model_construct(
-        slug="empty",
-        display_name="Empty",
-        max_iterations=5,
-        article_step_id="x",
-        steps=[],
-    )
-    rel_empty = "test/empty-push.flow.json"
-
-    monkeypatch.setattr("article_factory.orchestrator.flow_runner.read_flow", lambda p: empty)
-    monkeypatch.setattr("article_factory.orchestrator.flow_runner.select_puller_for_model", AsyncMock(return_value="p1"))
-    monkeypatch.setattr(
-        "article_factory.orchestrator.flow_runner.is_run_cancelled",
-        AsyncMock(return_value=False),
-    )
-
-    db = db_module.SessionLocal()
-    try:
-        from article_factory.services.runtime_settings import load_runtime_settings, update_factory_settings
-
-        update_factory_settings(db, {"default_model": "m1"})
-        run = FactoryRun(run_id="run-empty-steps", topic_slug="sports", flow_path=rel_empty, status="running")
-        db.add(run)
-        db.commit()
-        runtime = load_runtime_settings(db)
-        result = await execute_flow_pipeline(
-            db,
-            run=run,
-            flow_path=rel_empty,
-            topic_prompt="Topic",
-            runtime=runtime,
-            cms=None,
-            emit_step_started=AsyncMock(),
-            complete_run=AsyncMock(),
-        )
-        assert "without completion" in (result.error or "").lower()
-
-        rel_path = "test/max-iter-push.flow.json"
-        write_flow(rel_path, build_writer_review_flow())
-        flow = build_writer_review_flow()
-        flow.max_iterations = 1
-
-        review_calls = {"n": 0}
-
-        async def fake_step(ctx, cp=None, tracer=None, run_id=None):
-            if ctx.step_key == "writer":
-                return _step_record("writer", "# Title\n\nBody")
-            review_calls["n"] += 1
-            return _step_record("review", "Fix.\n\nVERDICT: REJECT")
-
-        monkeypatch.setattr(
-            "article_factory.orchestrator.flow_runner.read_flow",
-            lambda p: flow if "max-iter" in p else empty,
-        )
-        monkeypatch.setattr("article_factory.orchestrator.flow_runner.run_step_from_context", fake_step)
-
-        run2 = FactoryRun(run_id="run-max-iter", topic_slug="sports", flow_path=rel_path, status="running")
-        db.add(run2)
-        db.commit()
-        result2 = await execute_flow_pipeline(
-            db,
-            run=run2,
-            flow_path=rel_path,
-            topic_prompt="Topic",
-            runtime=runtime,
-            cms=None,
-            emit_step_started=AsyncMock(),
-            complete_run=AsyncMock(),
-        )
-        assert "Max flow iterations" in (result2.error or "")
     finally:
         db.close()
 

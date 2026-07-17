@@ -11,6 +11,7 @@ import FlowPerformancePage from "./pages/FlowPerformancePage";
 import FlowsPage from "./pages/FlowsPage";
 import PersonasPage from "./pages/PersonasPage";
 import ShiftsBoardPage from "./pages/ShiftsBoardPage";
+import ShiftRosterReviewPage from "./pages/ShiftRosterReviewPage";
 import StartFlowsPage from "./pages/StartFlowsPage";
 import PromptsPage from "./pages/PromptsPage";
 import QueuePage from "./pages/QueuePage";
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/shifts" element={<ShiftsBoardPage />} />
+          <Route path="/shifts/review/:planId" element={<ShiftRosterReviewPage />} />
           <Route path="/start-flows" element={<StartFlowsPage />} />
           <Route path="/articles" element={<ArticlesPage />} />
           <Route path="/articles/:runId" element={<ArticleDetailPage />} />

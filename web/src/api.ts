@@ -254,6 +254,8 @@ export type ShiftDeskSlotSummary = {
     status: string;
     priority: number;
     run_id?: string | null;
+    source?: string;
+    locked?: boolean;
   }>;
 };
 
@@ -264,6 +266,9 @@ export type ShiftPlanSummary = {
   window_ends_at: string;
   status: "draft" | "active" | "complete" | string;
   default_model: string;
+  roster_review_status?: string;
+  roster_generated_at?: string | null;
+  t15_applied_at?: string | null;
   assignment_counts: ShiftAssignmentCounts;
   assignment_total: number;
   desks: ShiftDeskSlotSummary[];
@@ -565,7 +570,16 @@ export type FlowDefinition = {
     producer_step_keys?: string[];
   } | null;
   reporter_pool?: string[];
+  beat_brief?: string;
   steps: FlowStep[];
+};
+
+export type StandingOrderShift = {
+  desk_path: string;
+  shift_key: string;
+  topics: string[];
+  target_count: number | null;
+  updated_at?: string | null;
 };
 
 export type FlowVersionSummary = {
@@ -1168,6 +1182,8 @@ export const api = {
     ),
   listPersonas: () => request<{ personas: Persona[] }>("/api/personas"),
   getShiftBoard: () => request<{ windows: ShiftBoardWindow[] }>("/api/shifts/board"),
+  getShiftPlan: (planId: number) =>
+    request<{ plan: ShiftPlanSummary }>(`/api/shifts/plans/${planId}`),
   ensureShiftPlan: (window_key: string) =>
     request<{ plan: ShiftPlanSummary }>("/api/shifts/plans/ensure", {
       method: "POST",
@@ -1195,6 +1211,39 @@ export const api = {
   activateShiftPlan: (planId: number) =>
     request<{ plan: ShiftPlanSummary; message: string }>(`/api/shifts/plans/${planId}/activate`, {
       method: "POST",
+    }),
+  patchShiftRoster: (
+    planId: number,
+    body: {
+      assignments: Array<{ id: number; prompt?: string; locked?: boolean; promote_to_manual?: boolean }>;
+    },
+  ) =>
+    request<{ plan: ShiftPlanSummary }>(`/api/shifts/plans/${planId}/roster`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  approveShiftRoster: (planId: number) =>
+    request<{ plan: ShiftPlanSummary; message: string }>(`/api/shifts/plans/${planId}/roster/approve`, {
+      method: "POST",
+    }),
+  rejectShiftRosterAi: (planId: number) =>
+    request<{ plan: ShiftPlanSummary; message: string; removed: number }>(
+      `/api/shifts/plans/${planId}/roster/reject-ai`,
+      { method: "POST" },
+    ),
+  listStandingOrders: (deskPath: string) =>
+    request<{ desk_path: string; shifts: StandingOrderShift[] }>(
+      `/api/standing-orders?desk_path=${encodeURIComponent(deskPath)}`,
+    ),
+  saveStandingOrder: (body: {
+    desk_path: string;
+    shift_key: string;
+    topics: string[];
+    target_count: number | null;
+  }) =>
+    request<{ order: StandingOrderShift }>("/api/standing-orders", {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
   getPersona: (slug: string) => request<{ persona: Persona }>(`/api/personas/${encodeURIComponent(slug)}`),
   createPersona: (body: Pick<Persona, "name" | "description" | "style_prompt"> & { slug?: string }) =>

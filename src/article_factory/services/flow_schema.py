@@ -48,6 +48,7 @@ class FlowDefinition(BaseModel):
     article_step_id: str | None = None
     performance: FlowPerformanceConfig | None = None
     reporter_pool: list[str] = Field(default_factory=list)
+    beat_brief: str = ""
     steps: list[FlowStep] = Field(default_factory=list, min_length=1)
 
     @model_validator(mode="after")

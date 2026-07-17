@@ -44,6 +44,13 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
     ],
     "shift_assignments": [
         ("reporter_persona_slug", "VARCHAR(64)"),
+        ("source", "VARCHAR(16) NOT NULL DEFAULT 'manual'"),
+        ("locked", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "shift_plans": [
+        ("roster_review_status", "VARCHAR(16) NOT NULL DEFAULT 'none'"),
+        ("roster_generated_at", "DATETIME"),
+        ("t15_applied_at", "DATETIME"),
     ],
     "flow_queues": [
         ("flow_version_id", "INTEGER"),

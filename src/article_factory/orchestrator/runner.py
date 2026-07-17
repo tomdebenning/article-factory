@@ -567,6 +567,18 @@ class FactoryLoop:
 
     async def _dispatch_tick(self) -> None:
         from article_factory.db import SessionLocal
+        from article_factory.services.shift_t15_scheduler import process_t15_due_plans
+
+        db = SessionLocal()
+        try:
+            processed = await process_t15_due_plans(db)
+            if processed:
+                db.commit()
+        except Exception:
+            logger.exception("T-15 scheduler error")
+            db.rollback()
+        finally:
+            db.close()
 
         self._prune_stale_puller_reservations()
 

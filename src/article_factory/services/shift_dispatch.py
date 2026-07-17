@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from article_factory.models import ShiftAssignment, ShiftDeskSlot, ShiftPlan
+from article_factory.services.assignment_desk import assignment_is_dispatchable
 from article_factory.services.shift_plans import maybe_complete_shift_plan
 
 
@@ -47,6 +48,10 @@ def select_pending_assignments_round_robin(
         if picked_ids:
             query = query.filter(~ShiftAssignment.id.in_(picked_ids))
         assignment = query.first()
+        if assignment is not None and not assignment_is_dispatchable(assignment, active_plan):
+            index = (index + 1) % len(desks)
+            attempts += 1
+            continue
         if assignment is not None:
             picked.append((assignment, desk, active_plan))
             picked_ids.add(assignment.id)
