@@ -2682,9 +2682,15 @@ async def test_showroom_publish_paths(configured_db, monkeypatch) -> None:
         body_markdown="# Title\n\nBody",
         manifest={},
     )
-    payload = build_publish_payload(run, article)
-    assert payload["article"]["title"] == "Title Body"
-    assert payload["manifest"]["selected_puller"] == "p1"
+    db = db_module.SessionLocal()
+    try:
+        db.add(run)
+        db.commit()
+        payload = build_publish_payload(db, run, article)
+        assert payload["article"]["title"] == "Title Body"
+        assert payload["manifest"]["selected_puller"] == "p1"
+    finally:
+        db.close()
 
     db = db_module.SessionLocal()
     try:

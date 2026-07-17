@@ -56,7 +56,11 @@ from article_factory.services.run_attachments import (
     read_run_workspace_file,
 )
 from article_factory.services.showroom_flow_publish import publish_flow_batch_to_showroom
-from article_factory.services.step_trace import step_executions_payload
+from article_factory.services.step_trace import (
+    manifest_step_tools_backfilled,
+    merge_tools_into_manifest,
+    step_executions_payload,
+)
 from article_factory.services.token_usage import enrich_manifest
 
 router = APIRouter(prefix="/api")
@@ -553,11 +557,22 @@ def enqueue_batch(body: QueueBatchBody, db: Session = Depends(get_db)) -> dict:
 
 def _completed_article_payload(db: Session, article: CompletedArticle) -> dict:
     run = db.query(FactoryRun).filter_by(run_id=article.run_id).one_or_none()
+    stored_manifest = article.manifest or (run.manifest if run else None) or {}
+    base_manifest = stored_manifest
+    if run is not None:
+        base_manifest = merge_tools_into_manifest(
+            stored_manifest,
+            step_executions_payload(db, run.run_id),
+        )
     manifest = enrich_manifest(
-        article.manifest or (run.manifest if run else None) or {},
+        base_manifest,
         selected_model=run.selected_model if run else "",
         body_markdown=article.body_markdown,
     )
+    if run is not None and manifest_step_tools_backfilled(stored_manifest, base_manifest):
+        article.manifest = manifest
+        run.manifest = manifest
+        db.commit()
     payload = CompletedArticleView.model_validate(article).model_dump()
     payload["manifest"] = manifest
     payload["model"] = str(manifest.get("selected_model") or "").strip() or "—"

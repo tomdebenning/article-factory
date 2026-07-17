@@ -59,6 +59,7 @@ from article_factory.services.flow_versions import resolve_flow_for_run, resolve
 from article_factory.services.topic_queue_snapshots import get_or_create_topic_queue_snapshot
 from article_factory.services.flow_performance import apply_run_performance
 from article_factory.services.showroom_flow_publish import maybe_publish_flow_batch_after_run
+from article_factory.services.step_trace import merge_tools_into_manifest, step_executions_payload
 from article_factory.services.telemetry import capture_run_telemetry_safe
 
 logger = logging.getLogger(__name__)
@@ -157,7 +158,10 @@ async def _complete_run(
         for record in step_records
     ]
     manifest = enrich_manifest(
-        build_manifest(run, enriched_records),
+        merge_tools_into_manifest(
+            build_manifest(run, enriched_records),
+            step_executions_payload(db, run.run_id),
+        ),
         selected_model=run.selected_model,
         body_markdown=draft,
     )

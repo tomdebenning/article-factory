@@ -309,6 +309,82 @@ def enrich_steps_with_responses(
     return steps
 
 
+def merge_tools_into_manifest(
+    manifest: dict[str, Any] | None,
+    execution_steps: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Backfill per-step tools_used on a manifest from step execution records."""
+    data = dict(manifest or {})
+    raw_steps = [
+        dict(step)
+        for step in (data.get("step_stats") or data.get("steps") or [])
+        if isinstance(step, dict)
+    ]
+    if not execution_steps:
+        return data
+
+    if not raw_steps:
+        raw_steps = [
+            {
+                "step_key": str(step.get("step_key") or ""),
+                "step_name": str(step.get("step_key") or "Step"),
+                "content": step.get("response_content") or "",
+                "duration_ms": step.get("duration_ms"),
+                "usage": step.get("usage") or {},
+                "tools_used": step.get("tools_used") or [],
+                "turns": step.get("turns"),
+                "model": step.get("model") or "",
+            }
+            for step in execution_steps
+            if str(step.get("step_key") or "").strip()
+        ]
+    elif len(raw_steps) == len(execution_steps):
+        for index, step in enumerate(raw_steps):
+            if not step.get("tools_used") and execution_steps[index].get("tools_used"):
+                step["tools_used"] = execution_steps[index]["tools_used"]
+    else:
+        seen: dict[str, int] = {}
+        by_key: dict[str, list[dict[str, Any]]] = {}
+        for execution in execution_steps:
+            key = str(execution.get("step_key") or "")
+            by_key.setdefault(key, []).append(execution)
+        for step in raw_steps:
+            if step.get("tools_used"):
+                continue
+            key = str(step.get("step_key") or "")
+            bucket = by_key.get(key, [])
+            index = seen.get(key, 0)
+            seen[key] = index + 1
+            if index < len(bucket) and bucket[index].get("tools_used"):
+                step["tools_used"] = bucket[index]["tools_used"]
+
+    data["steps"] = raw_steps
+    data["step_stats"] = raw_steps
+    return data
+
+
+def manifest_step_tools_backfilled(
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
+) -> bool:
+    """True when merge_tools_into_manifest added per-step tools_used."""
+    before_steps = (before or {}).get("step_stats") or (before or {}).get("steps") or []
+    after_steps = (after or {}).get("step_stats") or (after or {}).get("steps") or []
+    if not isinstance(before_steps, list) or not isinstance(after_steps, list):
+        return False
+    for index, after_step in enumerate(after_steps):
+        if not isinstance(after_step, dict):
+            continue
+        after_tools = after_step.get("tools_used")
+        if not after_tools:
+            continue
+        before_step = before_steps[index] if index < len(before_steps) else {}
+        before_tools = before_step.get("tools_used") if isinstance(before_step, dict) else None
+        if not before_tools:
+            return True
+    return False
+
+
 def step_executions_payload(db: Session, run_id: str) -> list[dict]:
     steps = [step_execution_to_dict(s) for s in list_step_executions(db, run_id)]
     return enrich_steps_with_responses(db, run_id, steps)

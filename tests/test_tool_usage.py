@@ -79,3 +79,41 @@ def test_flatten_tool_labels() -> None:
 
     summary = [{"step_key": "writer", "step_name": "Writer", "tools": ["Web search"]}]
     assert flatten_tool_labels(summary) == ["Web search (Writer)"]
+
+
+def test_merge_tools_into_manifest_from_executions() -> None:
+    from article_factory.services.step_trace import merge_tools_into_manifest
+
+    manifest = {
+        "step_stats": [
+            {"step_key": "writer", "step_name": "Writer", "content": "draft"},
+            {"step_key": "review", "step_name": "Review", "content": "ok"},
+        ]
+    }
+    executions = [
+        {
+            "step_key": "writer",
+            "tools_used": [{"tool": "web_search", "label": "Web search", "detail": '"news"'}],
+        },
+        {"step_key": "review", "tools_used": []},
+    ]
+    merged = merge_tools_into_manifest(manifest, executions)
+    assert merged["step_stats"][0]["tools_used"][0]["tool"] == "web_search"
+    assert merged["step_stats"][1].get("tools_used", []) == []
+
+
+def test_manifest_step_tools_backfilled() -> None:
+    from article_factory.services.step_trace import manifest_step_tools_backfilled
+
+    before = {"step_stats": [{"step_key": "writer", "content": "draft"}]}
+    after = {
+        "step_stats": [
+            {
+                "step_key": "writer",
+                "content": "draft",
+                "tools_used": [{"tool": "web_search"}],
+            }
+        ]
+    }
+    assert manifest_step_tools_backfilled(before, after) is True
+    assert manifest_step_tools_backfilled(after, after) is False

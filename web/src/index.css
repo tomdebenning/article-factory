@@ -291,12 +291,24 @@ select { cursor: pointer; }
   border-radius: 6px;
   background: #0d1117;
 }
-.tool-use-disclosure summary {
+.tool-use-disclosure-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   cursor: pointer;
   padding: 0.45rem 0.65rem;
   font-size: 0.88rem;
   color: #58a6ff;
   user-select: none;
+  list-style: none;
+}
+.tool-use-disclosure-summary::-webkit-details-marker,
+.tool-use-disclosure-summary::marker {
+  display: none;
+  content: "";
+}
+.tool-use-disclosure[open] > .tool-use-disclosure-summary .disclosure-chevron {
+  transform: rotate(45deg);
 }
 .tool-use-disclosure summary:hover { color: #79c0ff; }
 .tool-use-list {

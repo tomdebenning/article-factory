@@ -12,8 +12,11 @@ export default function ToolUseDisclosure({
   }
 
   return (
-    <details className="tool-use-disclosure" open={live || tools.length > 0 || undefined}>
-      <summary>{live ? `Tool use in progress (${tools.length})` : `Tool use (${tools.length})`}</summary>
+    <details className="tool-use-disclosure" open={live || undefined}>
+      <summary className="tool-use-disclosure-summary">
+        <span className="disclosure-chevron" aria-hidden="true" />
+        {live ? `Tool use in progress (${tools.length})` : `Tool use (${tools.length})`}
+      </summary>
       <ul className="tool-use-list">
         {tools.map((entry, index) => (
           <li key={`${entry.tool}-${entry.round ?? 0}-${index}`} className={entry.ok === false ? "tool-use-failed" : undefined}>

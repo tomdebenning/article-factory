@@ -10,6 +10,7 @@ from article_factory.cms_client import CmsClient, CmsRequestError, best_effort_s
 from article_factory.models import CompletedArticle, FactoryRun
 from article_factory.services.article_text import article_has_content, headline_from_markdown
 from article_factory.services.run_attachments import collect_run_workspace_attachments
+from article_factory.services.step_trace import merge_tools_into_manifest, step_executions_payload
 from article_factory.services.token_usage import enrich_manifest
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
 from article_factory.services.showroom_status_sync import push_showroom_factory_status
@@ -22,9 +23,17 @@ def slugify_title(title: str) -> str:
     return slug[:80] or "article"
 
 
-def build_publish_payload(run: FactoryRun, article: CompletedArticle) -> dict:
-    manifest = enrich_manifest(
+def build_publish_payload(
+    db: Session,
+    run: FactoryRun,
+    article: CompletedArticle,
+) -> dict:
+    merged = merge_tools_into_manifest(
         article.manifest or run.manifest or {},
+        step_executions_payload(db, run.run_id),
+    )
+    manifest = enrich_manifest(
+        merged,
         selected_model=run.selected_model,
         body_markdown=article.body_markdown,
     )
@@ -63,8 +72,9 @@ async def publish_article_to_showroom(
             raise CmsRequestError("Showroom CMS is not configured")
         cms = CmsClient(base_url=runtime.cms_url, api_key=runtime.cms_api_key)
 
-    payload = build_publish_payload(run, article)
+    payload = build_publish_payload(db, run, article)
     article.manifest = payload["manifest"]
+    run.manifest = payload["manifest"]
     article.title = payload["article"]["title"]
     db.commit()
 

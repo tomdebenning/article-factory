@@ -65,24 +65,30 @@ async def test_cms_client_raises_on_error() -> None:
 
 
 def test_build_publish_payload(configured_db) -> None:
-    run = FactoryRun(
-        run_id="run-pub",
-        topic_slug="sports",
-        status="completed",
-        selected_model="m1",
-        selected_puller="p1",
-    )
-    article = CompletedArticle(
-        run_id="run-pub",
-        topic_slug="sports",
-        title="Old",
-        summary="S",
-        body_markdown="# Headline\n\nBody text",
-        manifest={},
-    )
-    payload = build_publish_payload(run, article)
-    assert payload["article"]["title"] == "Headline Body text"
-    assert payload["manifest"]["selected_model"] == "m1"
+    db = db_module.SessionLocal()
+    try:
+        run = FactoryRun(
+            run_id="run-pub",
+            topic_slug="sports",
+            status="completed",
+            selected_model="m1",
+            selected_puller="p1",
+        )
+        db.add(run)
+        db.commit()
+        article = CompletedArticle(
+            run_id="run-pub",
+            topic_slug="sports",
+            title="Old",
+            summary="S",
+            body_markdown="# Headline\n\nBody text",
+            manifest={},
+        )
+        payload = build_publish_payload(db, run, article)
+        assert payload["article"]["title"] == "Headline Body text"
+        assert payload["manifest"]["selected_model"] == "m1"
+    finally:
+        db.close()
 
 
 @pytest.mark.asyncio

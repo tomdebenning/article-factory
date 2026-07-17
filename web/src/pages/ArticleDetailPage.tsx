@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import RunProgressPanel from "../components/RunProgressPanel";
-import { api, type CompletedArticle, type StepExecution } from "../api";
+import { api, type CompletedArticle, type StepExecution, type ToolUseEntry } from "../api";
 import { formatTokenCount } from "../utils/tokenFormat";
 
 function manifestSteps(manifest: CompletedArticle["manifest"]): StepExecution[] {
@@ -20,6 +20,8 @@ function manifestSteps(manifest: CompletedArticle["manifest"]): StepExecution[] 
     model: String(step.model || ""),
     duration_ms: typeof step.duration_ms === "number" ? step.duration_ms : null,
     usage: (step.usage as StepExecution["usage"]) || null,
+    tools_used: Array.isArray(step.tools_used) ? (step.tools_used as ToolUseEntry[]) : [],
+    turns: typeof step.turns === "number" ? step.turns : null,
     response_content: typeof step.content === "string" ? step.content : null,
     error: typeof step.error === "string" ? step.error : null,
   }));
