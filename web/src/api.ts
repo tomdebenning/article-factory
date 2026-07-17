@@ -84,7 +84,18 @@ export type FactorySettings = {
   brave_search_configured: boolean;
   gateway_id: string;
   gateway_display_name: string;
+  display_timezone: string;
+  auto_scheduler_enabled: boolean;
   updated_at?: string | null;
+};
+
+export type NewsroomAlert = {
+  id: number;
+  kind: string;
+  severity: string;
+  message: string;
+  shift_plan_id?: number | null;
+  created_at?: string | null;
 };
 
 export type FlowTemplate = {
@@ -1212,6 +1223,11 @@ export const api = {
     request<{ plan: ShiftPlanSummary; message: string }>(`/api/shifts/plans/${planId}/activate`, {
       method: "POST",
     }),
+  completeShiftPlan: (planId: number) =>
+    request<{ plan: ShiftPlanSummary; message: string }>(`/api/shifts/plans/${planId}/complete`, {
+      method: "POST",
+    }),
+  getShiftAlerts: () => request<{ alerts: NewsroomAlert[] }>("/api/shifts/alerts"),
   patchShiftRoster: (
     planId: number,
     body: {

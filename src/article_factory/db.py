@@ -21,6 +21,8 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("brave_search_api_key", "VARCHAR(256) NOT NULL DEFAULT ''"),
         ("gateway_id", "VARCHAR(128) NOT NULL DEFAULT ''"),
         ("gateway_display_name", "VARCHAR(128) NOT NULL DEFAULT ''"),
+        ("display_timezone", "VARCHAR(64) NOT NULL DEFAULT 'UTC'"),
+        ("auto_scheduler_enabled", "INTEGER NOT NULL DEFAULT 1"),
     ],
     "topic_queue": [
         ("flow_path", "VARCHAR(256) NOT NULL DEFAULT 'sports/standard-4-step.flow.json'"),

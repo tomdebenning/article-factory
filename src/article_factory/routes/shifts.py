@@ -21,6 +21,7 @@ from article_factory.services.assignment_desk import (
 )
 from article_factory.services.queue_presets import write_queue_preset
 from article_factory.services.runtime_settings import update_factory_settings
+from article_factory.services.newsroom_alerts import alerts_payload
 from article_factory.services.shift_plans import (
     activate_shift_plan,
     add_desk_slot,
@@ -32,6 +33,7 @@ from article_factory.services.shift_plans import (
     shift_plan_payload,
     update_shift_plan_settings,
 )
+from article_factory.services.shift_boundary_scheduler import hard_stop_shift_plan
 from article_factory.services.shift_windows import today_and_tomorrow_shift_windows
 
 router = APIRouter(prefix="/api/shifts", dependencies=[Depends(require_api_key)])
@@ -42,6 +44,11 @@ def _window_from_key(window_key: str):
         if window.window_key == window_key:
             return window
     raise HTTPException(status_code=400, detail="Invalid shift window key")
+
+
+@router.get("/alerts")
+def get_newsroom_alerts(db: Session = Depends(get_db)) -> dict:
+    return {"alerts": alerts_payload(db)}
 
 
 @router.get("/board")
@@ -139,6 +146,16 @@ def post_activate_plan(plan_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/plans/{plan_id}/complete")
+async def post_complete_plan(plan_id: int, db: Session = Depends(get_db)) -> dict:
+    try:
+        plan = await hard_stop_shift_plan(db, plan_id, reason="Shift completed manually")
+        db.commit()
+        return {"plan": shift_plan_payload(db, plan), "message": "Shift completed."}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/plans/save")

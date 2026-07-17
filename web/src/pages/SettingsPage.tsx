@@ -56,6 +56,8 @@ export default function SettingsPage() {
           brave_search_configured: data.brave_search_configured ?? false,
           gateway_id: data.gateway_id ?? "",
           gateway_display_name: data.gateway_display_name ?? "The Newsroom",
+          display_timezone: data.display_timezone ?? "UTC",
+          auto_scheduler_enabled: data.auto_scheduler_enabled ?? true,
         });
         setFactoryDisplayName(data.gateway_display_name ?? "The Newsroom");
       })
@@ -286,6 +288,34 @@ export default function SettingsPage() {
           successTitle="Brave Search connected"
           errorTitle="Brave Search connection failed"
         />
+      </div>
+
+      <div className="step-card">
+        <h3>Shift scheduler</h3>
+        <p className="hint">
+          Shift boundaries always run in UTC. The display timezone converts labels in the Newsroom UI only.
+        </p>
+        <label>
+          Display timezone
+          <select
+            value={settings.display_timezone}
+            onChange={(e) => setSettings({ ...settings, display_timezone: e.target.value })}
+          >
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">America/New_York</option>
+            <option value="America/Chicago">America/Chicago</option>
+            <option value="America/Los_Angeles">America/Los_Angeles</option>
+            <option value="Europe/London">Europe/London</option>
+          </select>
+        </label>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={settings.auto_scheduler_enabled}
+            onChange={(e) => setSettings({ ...settings, auto_scheduler_enabled: e.target.checked })}
+          />
+          Auto-activate and complete shifts at UTC window boundaries
+        </label>
       </div>
 
       <div className="step-card">

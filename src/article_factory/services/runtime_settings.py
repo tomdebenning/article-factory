@@ -20,6 +20,8 @@ class RuntimeSettings:
     default_model: str
     default_flow_path: str = DEFAULT_FLOW_PATH
     brave_search_api_key: str = ""
+    display_timezone: str = "UTC"
+    auto_scheduler_enabled: bool = True
 
 
 from article_factory.services.api_keys import is_real_api_key, normalize_api_key
@@ -91,6 +93,8 @@ def load_runtime_settings(db: Session) -> RuntimeSettings:
         default_model=_fallback(row.default_model, settings.default_model),
         default_flow_path=(row.default_flow_path or DEFAULT_FLOW_PATH).strip() or DEFAULT_FLOW_PATH,
         brave_search_api_key=_fallback(row.brave_search_api_key, settings.brave_search_api_key),
+        display_timezone=(getattr(row, "display_timezone", None) or "UTC").strip() or "UTC",
+        auto_scheduler_enabled=bool(getattr(row, "auto_scheduler_enabled", True)),
     )
 
 
@@ -104,12 +108,15 @@ def update_factory_settings(db: Session, body: dict[str, str]) -> FactorySetting
         "default_model",
         "default_flow_path",
         "brave_search_api_key",
+        "display_timezone",
     ):
         if field in body:
             value = body[field].strip()
             if field in ("control_plane_url", "cms_url"):
                 value = normalize_base_url(value)
             setattr(row, field, value)
+    if "auto_scheduler_enabled" in body:
+        row.auto_scheduler_enabled = bool(body["auto_scheduler_enabled"])
     db.commit()
     db.refresh(row)
     return row

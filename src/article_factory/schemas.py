@@ -157,6 +157,8 @@ class FactorySettingsBody(BaseModel):
     default_model: str = ""
     default_flow_path: str = "sports/standard-4-step.flow.json"
     brave_search_api_key: str = ""
+    display_timezone: str = "UTC"
+    auto_scheduler_enabled: bool = True
 
 
 class FactorySettingsView(BaseModel):
@@ -170,6 +172,8 @@ class FactorySettingsView(BaseModel):
     brave_search_configured: bool = False
     gateway_id: str = ""
     gateway_display_name: str = "Article Factory"
+    display_timezone: str = "UTC"
+    auto_scheduler_enabled: bool = True
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}

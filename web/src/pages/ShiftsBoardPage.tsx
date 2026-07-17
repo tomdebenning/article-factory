@@ -36,6 +36,7 @@ function progressText(window: ShiftBoardWindow): string {
 
 export default function ShiftsBoardPage() {
   const [windows, setWindows] = useState<ShiftBoardWindow[]>([]);
+  const [alerts, setAlerts] = useState<Awaited<ReturnType<typeof api.getShiftAlerts>>["alerts"]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export default function ShiftsBoardPage() {
         setError(null);
       })
       .catch((e: Error) => setError(e.message));
+    void api.getShiftAlerts().then((data) => setAlerts(data.alerts)).catch(() => setAlerts([]));
   };
 
   useEffect(() => {
@@ -69,12 +71,35 @@ export default function ShiftsBoardPage() {
       .finally(() => setBusyId(null));
   };
 
+  const complete = (planId: number) => {
+    setBusyId(planId);
+    setMessage(null);
+    void api
+      .completeShiftPlan(planId)
+      .then((result) => {
+        setMessage(result.message);
+        reload();
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusyId(null));
+  };
+
   return (
     <section className="card shifts-board-page">
       <h2>Shift board</h2>
       <p className="hint">
-        The next eight six-hour shifts in UTC — today and tomorrow. Staff a shift, then activate it when you are ready to publish.
+        The next eight six-hour shifts in UTC — today and tomorrow. Shifts auto-activate at window boundaries when the
+        scheduler is enabled in Settings; you can still activate or complete manually.
       </p>
+      {alerts.length > 0 && (
+        <ul className="newsroom-alerts">
+          {alerts.map((alert) => (
+            <li key={alert.id} className={`newsroom-alert severity-${alert.severity}`}>
+              {alert.message}
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
 
@@ -134,9 +159,19 @@ export default function ShiftsBoardPage() {
                   </button>
                 )}
                 {plan?.status === "active" && (
-                  <Link to="/queue?tab=running" className="secondary">
-                    View active work
-                  </Link>
+                  <>
+                    <Link to="/queue?tab=running" className="secondary">
+                      View active work
+                    </Link>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busyId === plan.id}
+                      onClick={() => complete(plan.id)}
+                    >
+                      {busyId === plan.id ? "Completing…" : "Complete shift"}
+                    </button>
+                  </>
                 )}
               </div>
             </article>

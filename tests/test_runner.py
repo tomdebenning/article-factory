@@ -107,7 +107,8 @@ async def test_run_pipeline_publishes_on_accept(configured_db, pipeline_env, mon
         from article_factory.models import CompletedArticle
 
         article = db.query(CompletedArticle).filter_by(run_id=run.run_id).one()
-        assert "Big Win" in article.body_markdown
+        assert article.body_markdown == "Great game."
+        assert "Big Win" in (article.edition_headline or article.title)
     finally:
         db.close()
 
@@ -151,7 +152,8 @@ async def test_run_pipeline_keeps_completed_when_showroom_publish_fails(
         assert "Showroom publish failed" in (run.error or "")
         assert "Unknown topic general" in (run.error or "")
         article = db.query(CompletedArticle).filter_by(run_id=run.run_id).one()
-        assert "Big Win" in article.body_markdown
+        assert article.body_markdown == "Great game."
+        assert "Big Win" in (article.edition_headline or article.title)
     finally:
         db.close()
 

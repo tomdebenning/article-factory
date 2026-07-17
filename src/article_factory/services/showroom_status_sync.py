@@ -14,6 +14,7 @@ from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.models import FactoryRun, ShiftAssignment, TopicQueueItem
 from article_factory.orchestrator.pipeline import push_factory_status
 from article_factory.services.factory_identity import load_factory_identity
+from article_factory.services.newsroom_alerts import alerts_payload
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
 from article_factory.services.showroom_puller_meta import build_pullers_system_meta
 
@@ -59,6 +60,15 @@ async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:
     running = _active_runs(db)
     queue_depth = db.query(ShiftAssignment).filter_by(status="pending").count()
     system_meta = await _pullers_system_meta(db)
+    runtime = load_runtime_settings(db)
+    if system_meta is None:
+        system_meta = {}
+    system_meta = {
+        **system_meta,
+        "alerts": alerts_payload(db),
+        "display_timezone": runtime.display_timezone,
+        "auto_scheduler_enabled": runtime.auto_scheduler_enabled,
+    }
     await push_factory_status(
         cms,
         db=db,

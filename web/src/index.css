@@ -1896,6 +1896,31 @@ select { cursor: pointer; }
   margin-top: 1rem;
 }
 
+.newsroom-alerts {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.newsroom-alert {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, #30363d);
+  font-size: 0.9rem;
+}
+
+.newsroom-alert.severity-warning {
+  border-color: #d29922;
+  background: color-mix(in srgb, #d29922 12%, transparent);
+}
+
+.newsroom-alert.severity-info {
+  border-color: #58a6ff;
+  background: color-mix(in srgb, #58a6ff 10%, transparent);
+}
+
 .shift-desk-card {
   margin-top: 1rem;
 }

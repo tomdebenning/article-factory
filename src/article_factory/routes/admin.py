@@ -183,6 +183,8 @@ def _settings_view(db: Session) -> FactorySettingsView:
         brave_search_configured=bool(runtime.brave_search_api_key.strip()),
         gateway_id=identity.gateway_id,
         gateway_display_name=identity.gateway_display_name,
+        display_timezone=runtime.display_timezone,
+        auto_scheduler_enabled=runtime.auto_scheduler_enabled,
         updated_at=row.updated_at,
     )
 
@@ -204,6 +206,8 @@ def put_settings(body: FactorySettingsBody, db: Session = Depends(get_db)) -> Fa
             "default_model": body.default_model,
             "default_flow_path": body.default_flow_path.strip(),
             "brave_search_api_key": body.brave_search_api_key.strip(),
+            "display_timezone": body.display_timezone.strip() or "UTC",
+            "auto_scheduler_enabled": body.auto_scheduler_enabled,
         },
     )
     return _settings_view(db)

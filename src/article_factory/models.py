@@ -261,9 +261,24 @@ class FactorySettings(Base):
     brave_search_api_key: Mapped[str] = mapped_column(String(256), default="")
     gateway_id: Mapped[str] = mapped_column(String(128), default="")
     gateway_display_name: Mapped[str] = mapped_column(String(128), default="")
+    display_timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    auto_scheduler_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
+
+
+class NewsroomAlert(Base):
+    __tablename__ = "newsroom_alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="warning")
+    message: Mapped[str] = mapped_column(Text)
+    shift_plan_id: Mapped[int | None] = mapped_column(ForeignKey("shift_plans.id"), nullable=True, index=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CompletedArticle(Base):

@@ -63,6 +63,6 @@ async def generate_edition_headline(
         headline = str(payload.get("headline") or "").strip()
         if headline:
             return headline[:256]
-    except (json.JSONDecodeError, ValueError, RuntimeError) as exc:
+    except Exception as exc:
         logger.warning("Edition headline generation failed for run %s: %s", run.run_id, exc)
     return fallback

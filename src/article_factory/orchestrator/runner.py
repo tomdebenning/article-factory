@@ -571,15 +571,32 @@ class FactoryLoop:
 
     async def _dispatch_tick(self) -> None:
         from article_factory.db import SessionLocal
+        from article_factory.services.shift_boundary_scheduler import process_shift_boundaries
         from article_factory.services.shift_t15_scheduler import process_t15_due_plans
+        from article_factory.services.showroom_status_sync import schedule_showroom_status_refresh
 
         db = SessionLocal()
+        boundary_summary: dict[str, int] = {"ended": 0, "activated": 0, "alerts": 0}
         try:
             processed = await process_t15_due_plans(db)
             if processed:
                 db.commit()
         except Exception:
             logger.exception("T-15 scheduler error")
+            db.rollback()
+        finally:
+            db.close()
+
+        db = SessionLocal()
+        try:
+            boundary_summary = await process_shift_boundaries(db)
+            if any(boundary_summary.values()):
+                db.commit()
+                if boundary_summary.get("activated"):
+                    self.request_dispatch()
+                schedule_showroom_status_refresh(force=True)
+        except Exception:
+            logger.exception("Shift boundary scheduler error")
             db.rollback()
         finally:
             db.close()

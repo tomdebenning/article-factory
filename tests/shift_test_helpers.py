@@ -12,10 +12,10 @@ def seed_active_shift_assignments(
     flow_version_id: int | None = None,
 ):
     from article_factory.models import ShiftAssignment, ShiftDeskSlot, ShiftPlan
-    from article_factory.services.shift_windows import today_and_tomorrow_shift_windows
+    from article_factory.services.shift_windows import shift_window_containing
 
     assignment_prompts = prompts or ["From queue"]
-    window = today_and_tomorrow_shift_windows()[0]
+    window = shift_window_containing(datetime.now(timezone.utc))
     plan = ShiftPlan(
         shift_key=window.shift_key,
         window_starts_at=window.starts_at,
