@@ -1931,3 +1931,86 @@ select { cursor: pointer; }
   justify-content: space-between;
   margin-bottom: 0.75rem;
 }
+
+.morning-shift-wizard {
+  border-left: 4px solid #58a6ff;
+}
+
+.morning-shift-wizard-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.morning-shift-wizard-head h3 {
+  margin: 0 0 0.35rem;
+}
+
+.morning-shift-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.morning-shift-steps li {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.morning-shift-steps li.is-done .morning-shift-step-icon {
+  color: #3fb950;
+}
+
+.morning-shift-step-icon {
+  color: #8b949e;
+  flex-shrink: 0;
+  font-weight: 700;
+  width: 1.25rem;
+}
+
+.morning-shift-step-link {
+  display: inline-block;
+  margin-top: 0.35rem;
+}
+
+.featured-beat-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 0.75rem 0 1.25rem;
+}
+
+.featured-beat-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.featured-beat-card h4 {
+  margin: 0;
+}
+
+.staffing-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.staffing-group h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b949e;
+}

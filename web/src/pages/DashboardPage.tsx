@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import MorningShiftWizard from "../components/MorningShiftWizard";
 import RunProgressPanel from "../components/RunProgressPanel";
 import {
   api,
@@ -167,6 +168,13 @@ export default function DashboardPage() {
           then publish accepted artifacts to The Edition.
         </p>
       </section>
+
+      {status.onboarding && (
+        <MorningShiftWizard
+          onboarding={status.onboarding}
+          setupComplete={readiness.setup_complete}
+        />
+      )}
 
       <section className={`card home-activity${isWriting ? " is-writing" : ""}`}>
         <div className="home-activity-head">

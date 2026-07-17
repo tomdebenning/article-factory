@@ -49,6 +49,7 @@ from article_factory.services.brave_search import brave_web_search, format_brave
 from article_factory.services.active_board import build_active_overview
 from article_factory.services.factory_identity import load_factory_identity, save_factory_display_name
 from article_factory.services.factory_readiness import assess_factory_readiness
+from article_factory.services.onboarding import morning_shift_onboarding
 from article_factory.services.factory_stats import build_factory_stats
 from article_factory.services.run_outputs import list_run_step_files, read_run_step_file
 from article_factory.services.article_text import article_has_content
@@ -386,6 +387,7 @@ async def factory_status(db: Session = Depends(get_db)) -> dict:
         "queue_depth": queued,
         "queue_counts": queue_counts,
         "readiness": readiness,
+        "onboarding": morning_shift_onboarding(db, setup_complete=readiness["setup_complete"]),
         "active_run": None,
         "active_runs": [_run_summary(run) for run in active_runs],
         "flow_queues": list_flow_queues(db),

@@ -233,13 +233,17 @@ def _flow_catalog_entry(child: dict[str, Any]) -> dict[str, Any] | None:
         slug = str(raw.get("slug") or "").strip() or fallback_slug
         steps = raw.get("steps")
         step_count = len(steps) if isinstance(steps, list) else 0
-        return {
+        beat_brief = str(raw.get("beat_brief") or "").strip()
+        entry = {
             "path": path,
             "display_name": display_name,
             "slug": slug,
             "step_count": step_count,
             "modified_at": child.get("modified_at"),
         }
+        if beat_brief:
+            entry["beat_brief"] = beat_brief
+        return entry
     except (FileNotFoundError, ValueError, json.JSONDecodeError, OSError):
         return {
             "path": path,
@@ -315,8 +319,12 @@ def ensure_default_flows() -> str:
 
 def ensure_default_templates() -> None:
     from article_factory.services.flow_defaults import (
+        build_ai_news_desk_flow,
+        build_business_news_desk_flow,
         build_single_writer_flow,
+        build_sports_desk_flow,
         build_standard_sports_flow,
+        build_tech_news_desk_flow,
         build_writer_review_flow,
     )
 
@@ -324,6 +332,10 @@ def ensure_default_templates() -> None:
     templates_dir.mkdir(parents=True, exist_ok=True)
     seeds = [
         ("standard-4-step.flow.json", build_standard_sports_flow),
+        ("sports.flow.json", build_sports_desk_flow),
+        ("business-news.flow.json", build_business_news_desk_flow),
+        ("tech-news.flow.json", build_tech_news_desk_flow),
+        ("ai-news.flow.json", build_ai_news_desk_flow),
         ("single-writer.flow.json", build_single_writer_flow),
         ("writer-review.flow.json", build_writer_review_flow),
     ]

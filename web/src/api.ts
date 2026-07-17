@@ -103,7 +103,22 @@ export type FlowTemplate = {
   display_name: string;
   slug: string;
   step_count: number;
+  beat_brief?: string;
   modified_at?: string;
+};
+
+export type OnboardingStep = {
+  id: string;
+  label: string;
+  description: string;
+  action_path: string;
+  ok: boolean;
+};
+
+export type MorningShiftOnboarding = {
+  show_wizard: boolean;
+  completed: boolean;
+  steps: OnboardingStep[];
 };
 
 export type PullerInfo = {
@@ -477,6 +492,7 @@ export type FactoryStatus = {
     failed: number;
   };
   readiness: FactoryReadiness;
+  onboarding?: MorningShiftOnboarding;
   active_run: RunSummary | null;
   active_runs: RunSummary[];
   flow_queues?: FlowQueueSummary[];

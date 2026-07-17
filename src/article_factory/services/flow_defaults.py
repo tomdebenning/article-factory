@@ -126,3 +126,65 @@ def build_writer_review_flow() -> FlowDefinition:
         article_step_id=writer.step_id,
         steps=[writer, review],
     )
+
+
+def _beat_flow(
+    *,
+    slug: str,
+    display_name: str,
+    beat_brief: str,
+    journalist_prompt: str,
+) -> FlowDefinition:
+    base = build_standard_sports_flow()
+    writer = base.steps[0].model_copy(update={"system_prompt": journalist_prompt})
+    return base.model_copy(
+        update={
+            "slug": slug,
+            "display_name": display_name,
+            "beat_brief": beat_brief,
+            "steps": [writer, *base.steps[1:]],
+        }
+    )
+
+
+def build_sports_desk_flow() -> FlowDefinition:
+    return _beat_flow(
+        slug="sports",
+        display_name="Sports",
+        beat_brief="Games, athletes, leagues, and the stories fans care about.",
+        journalist_prompt="You are a sports journalist. Write clear, engaging articles for a general audience.",
+    )
+
+
+def build_business_news_desk_flow() -> FlowDefinition:
+    return _beat_flow(
+        slug="business-news",
+        display_name="Business News",
+        beat_brief="Markets, companies, policy, and economic trends for a general business reader.",
+        journalist_prompt=(
+            "You are a business journalist. Write clear, well-sourced articles about companies, "
+            "markets, and the economy for a general audience."
+        ),
+    )
+
+
+def build_tech_news_desk_flow() -> FlowDefinition:
+    return _beat_flow(
+        slug="tech-news",
+        display_name="Tech News",
+        beat_brief="Products, platforms, security, and industry moves in technology.",
+        journalist_prompt=(
+            "You are a technology journalist. Explain technical topics clearly for a smart general audience."
+        ),
+    )
+
+
+def build_ai_news_desk_flow() -> FlowDefinition:
+    return _beat_flow(
+        slug="ai-news",
+        display_name="AI News",
+        beat_brief="Artificial intelligence research, products, policy, and real-world impact.",
+        journalist_prompt=(
+            "You are an AI beat journalist. Cover models, tools, regulation, and industry impact with clarity and nuance."
+        ),
+    )

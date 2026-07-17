@@ -9,6 +9,7 @@ import ModelSelectFields from "../components/ModelSelectFields";
 import SecretInput from "../components/SecretInput";
 import { useFactoryIdentity } from "../context/FactoryIdentityContext";
 import { useFlowSelectOptions } from "../hooks/useFlowSelectOptions";
+import { readAdvancedMode, writeAdvancedMode } from "../utils/advancedMode";
 import { ensureFlowSelectOption } from "../utils/flowSelectOptions";
 
 const idleTest: ConnectionTestState = { status: "idle", message: "" };
@@ -32,6 +33,7 @@ export default function SettingsPage() {
   const [savingFactoryName, setSavingFactoryName] = useState(false);
   const [factoryNameMessage, setFactoryNameMessage] = useState<string | null>(null);
   const [factoryNameError, setFactoryNameError] = useState<string | null>(null);
+  const [advancedMode, setAdvancedMode] = useState(() => readAdvancedMode());
 
   const loadAuthStatus = () => {
     void api
@@ -320,6 +322,13 @@ export default function SettingsPage() {
 
       <div className="step-card">
         <h3>Control plane</h3>
+        {advancedMode && settings.control_plane_url.trim() && (
+          <p className="hint">
+            <a href={settings.control_plane_url.trim()} target="_blank" rel="noreferrer">
+              Open control plane in a new tab →
+            </a>
+          </p>
+        )}
         <label>
           Control plane URL
           <input
@@ -339,6 +348,7 @@ export default function SettingsPage() {
           model={settings.default_model}
           onModelChange={(default_model) => setSettings({ ...settings, default_model })}
           label="Default model"
+          staffingMode={advancedMode}
         />
         <button
           type="button"
@@ -437,6 +447,25 @@ export default function SettingsPage() {
             Edit default desk prompts
           </Link>
         </p>
+      </div>
+
+      <div className="step-card">
+        <h3>Advanced</h3>
+        <p className="hint">
+          Show staffing groups (local vs wire pullers) and a direct link to the control plane dashboard.
+        </p>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={advancedMode}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              setAdvancedMode(enabled);
+              writeAdvancedMode(enabled);
+            }}
+          />
+          Show advanced newsroom options
+        </label>
       </div>
 
       {(saveMessage || saveError) && (
