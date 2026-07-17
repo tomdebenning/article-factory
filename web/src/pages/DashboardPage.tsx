@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import MorningShiftWizard from "../components/MorningShiftWizard";
 import RunProgressPanel from "../components/RunProgressPanel";
@@ -10,6 +10,7 @@ import {
   type ReadinessCheck,
   type RunSummary,
 } from "../api";
+import { deskDetailUrl, loadDeskSummaries, type DeskSummary } from "../utils/desks";
 
 function ReadinessChecklist({ checks }: { checks: ReadinessCheck[] }) {
   return (
@@ -57,7 +58,7 @@ function ActiveRunCard({
         <span className="hint">
           {run.flow_path && (
             <>
-              <Link to={`/flows/edit?path=${encodeURIComponent(run.flow_path)}`}>{run.flow_path}</Link>
+              <Link to={deskDetailUrl(run.flow_path)}>{run.flow_path}</Link>
               {" · "}
             </>
           )}
@@ -87,17 +88,43 @@ function ActiveRunCard({
   );
 }
 
+function DeskDashboardTile({
+  desk,
+  runningCount,
+}: {
+  desk: DeskSummary;
+  runningCount: number;
+}) {
+  return (
+    <Link to={deskDetailUrl(desk.path)} className={`desk-tile desk-tile-dashboard${runningCount > 0 ? " is-active" : ""}`}>
+      <span className="desk-tile-label">{desk.display_name}</span>
+      <span className="desk-tile-role">{desk.step_count} pipeline steps</span>
+      <span className="desk-tile-meta">
+        {runningCount > 0
+          ? `${runningCount} running now`
+          : desk.path}
+      </span>
+    </Link>
+  );
+}
+
 export default function DashboardPage() {
   const [status, setStatus] = useState<FactoryStatus | null>(null);
+  const [desks, setDesks] = useState<DeskSummary[]>([]);
   const [articles, setArticles] = useState<CompletedArticle[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [stopRunId, setStopRunId] = useState<string | null>(null);
 
   const reload = () => {
-    void Promise.all([api.factoryStatus(), api.listArticles()])
-      .then(([nextStatus, articleList]) => {
+    void Promise.all([
+      api.factoryStatus(),
+      loadDeskSummaries(api.getFlowTree, api.listFlows),
+      api.listArticles(),
+    ])
+      .then(([nextStatus, deskList, articleList]) => {
         setStatus(nextStatus);
+        setDesks(deskList);
         setArticles(articleList.articles.slice(0, 5));
         setError(null);
       })
@@ -124,6 +151,26 @@ export default function DashboardPage() {
       .finally(() => setStopRunId(null));
   };
 
+  const runsByDesk = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!status) {
+      return map;
+    }
+    const runs =
+      status.active_runs?.length > 0
+        ? status.active_runs
+        : status.active_run
+          ? [status.active_run]
+          : [];
+    for (const run of runs) {
+      if (!run.flow_path) {
+        continue;
+      }
+      map.set(run.flow_path, (map.get(run.flow_path) || 0) + 1);
+    }
+    return map;
+  }, [status]);
+
   if (error) {
     return (
       <section className="card home-page">
@@ -142,7 +189,7 @@ export default function DashboardPage() {
   if (!status) {
     return (
       <section className="card home-page">
-        <p className="hint">Loading…</p>
+        <p className="hint">Loading dashboard…</p>
       </section>
     );
   }
@@ -157,15 +204,33 @@ export default function DashboardPage() {
         : [];
   const queuedCount = status.queue_counts?.queued ?? status.queue_depth ?? 0;
   const isWriting = activeRuns.length > 0;
+  const missingCount = issueChecks.length;
 
   return (
-    <div className="home-page">
-      <section className="card home-hero">
-        <p className="home-eyebrow">Welcome</p>
-        <p className="home-lead">
-          Turn a list of topics into finished articles using reusable prompt flows. Assign a model,
-          queue your topics, and the factory runs each step through your control-plane pullers —
-          then publish accepted artifacts to The Edition.
+    <div className="home-page newsroom-dashboard">
+      <section className="card dashboard-status-strip">
+        <div className="dashboard-status-metrics">
+          <div className={`dashboard-metric${isWriting ? " is-live" : ""}`}>
+            <span className="dashboard-metric-value">{activeRuns.length}</span>
+            <span className="dashboard-metric-label">Running</span>
+          </div>
+          <div className={`dashboard-metric${queuedCount > 0 ? " is-warn" : ""}`}>
+            <span className="dashboard-metric-value">{queuedCount}</span>
+            <span className="dashboard-metric-label">Queued</span>
+          </div>
+          <div className={`dashboard-metric${missingCount > 0 ? " is-warn" : ""}`}>
+            <span className="dashboard-metric-value">{missingCount}</span>
+            <span className="dashboard-metric-label">Needs attention</span>
+          </div>
+          <div className="dashboard-metric">
+            <span className="dashboard-metric-value">{desks.length}</span>
+            <span className="dashboard-metric-label">Desks</span>
+          </div>
+        </div>
+        <p className="hint dashboard-status-summary">
+          {readiness.setup_complete
+            ? readiness.summary
+            : "Finish setup before the newsroom can run shifts reliably."}
         </p>
       </section>
 
@@ -176,21 +241,53 @@ export default function DashboardPage() {
         />
       )}
 
-      <section className={`card home-activity${isWriting ? " is-writing" : ""}`}>
-        <div className="home-activity-head">
+      <section className="card dashboard-section">
+        <div className="dashboard-section-head">
           <div>
-            <h3>{isWriting ? "Writing now" : "Activity"}</h3>
-            <p className="hint home-activity-sub">
+            <h3>Your desks</h3>
+            <p className="hint">Open a desk to manage staff, shifts, and standing orders.</p>
+          </div>
+          {desks.length > 0 && (
+            <Link to="/flows/new" className="secondary">
+              Create desk
+            </Link>
+          )}
+        </div>
+        {desks.length === 0 ? (
+          <div className="desk-empty-panel">
+            <p>No desks configured yet.</p>
+            <Link to="/flows/new" className="desk-tile desk-tile-create desk-tile-dashboard">
+              Create your first desk
+            </Link>
+          </div>
+        ) : (
+          <div className="desk-button-row desk-dashboard-grid">
+            {desks.map((desk) => (
+              <DeskDashboardTile key={desk.path} desk={desk} runningCount={runsByDesk.get(desk.path) || 0} />
+            ))}
+            <Link to="/flows/new" className="desk-tile desk-tile-create desk-tile-dashboard">
+              <span className="desk-tile-label">Create desk</span>
+              <span className="desk-tile-role">From template or blank</span>
+            </Link>
+          </div>
+        )}
+      </section>
+
+      <section className={`card dashboard-section${isWriting ? " is-writing" : ""}`}>
+        <div className="dashboard-section-head">
+          <div>
+            <h3>{isWriting ? "Running now" : "Activity"}</h3>
+            <p className="hint">
               {isWriting
-                ? `${activeRuns.length} article${activeRuns.length === 1 ? "" : "s"} in progress right now.`
+                ? `${activeRuns.length} article${activeRuns.length === 1 ? "" : "s"} in progress.`
                 : queuedCount > 0
-                  ? `${queuedCount} topic${queuedCount === 1 ? "" : "s"} queued — waiting for an idle puller.`
-                  : "Nothing is running at the moment. Start a flow when you are ready."}
+                  ? `${queuedCount} topic${queuedCount === 1 ? "" : "s"} waiting for a puller.`
+                  : "Nothing is running right now."}
             </p>
           </div>
           {(isWriting || queuedCount > 0) && (
-            <Link to="/queue?tab=running" className="secondary home-activity-link">
-              View Active
+            <Link to="/queue?tab=running" className="secondary">
+              View active
             </Link>
           )}
         </div>
@@ -203,43 +300,32 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : (
-          <div className="home-idle-panel">
-            <p>
-              {readiness.phase === "setup_required"
-                ? "Finish setup below, then queue topics to begin."
-                : "Pick an existing desk to run, or create a new one in the desk library."}
-            </p>
-            {!readiness.setup_complete && (
-              <p className="hint">{readiness.summary}</p>
-            )}
-          </div>
+          <p className="hint dashboard-idle-copy">
+            Staff a shift on the shift board when you are ready to dispatch assignments.
+          </p>
         )}
       </section>
+
+      {issueChecks.length > 0 && (
+        <section className="card dashboard-section dashboard-missing">
+          <h3>Missing or blocked</h3>
+          <p className="hint">Resolve these before running shifts.</p>
+          <ReadinessChecklist checks={issueChecks} />
+        </section>
+      )}
 
       <section className="home-actions">
         <Link to="/shifts" className="home-action-card home-action-primary">
           <span className="home-action-label">Shift board</span>
-          <span className="home-action-desc">
-            See the next four UTC shifts, staff desks, and activate when ready.
-          </span>
+          <span className="home-action-desc">Staff desks, activate windows, and complete shifts.</span>
           <span className="home-action-cta">Open shift board →</span>
         </Link>
-        <Link to="/start-flows" className="home-action-card home-action-secondary">
-          <span className="home-action-label">Plan a shift</span>
-          <span className="home-action-desc">
-            Load assignments onto desks for a specific shift window.
-          </span>
-          <span className="home-action-cta">Plan a shift →</span>
+        <Link to="/settings" className="home-action-card home-action-secondary">
+          <span className="home-action-label">Integrations</span>
+          <span className="home-action-desc">Control plane, Edition publish, and scheduler settings.</span>
+          <span className="home-action-cta">Open settings →</span>
         </Link>
       </section>
-
-      {issueChecks.length > 0 && (
-        <section className="card home-setup">
-          <h3>Before you run</h3>
-          <p className="hint">These items should be resolved for reliable article production.</p>
-          <ReadinessChecklist checks={issueChecks} />
-        </section>
-      )}
 
       {articles.length > 0 && (
         <section className="card home-recent">

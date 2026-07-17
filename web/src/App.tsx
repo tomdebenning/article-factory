@@ -4,12 +4,15 @@ import { useFactoryIdentity } from "./context/FactoryIdentityContext";
 import ArticlesPage from "./pages/ArticlesPage";
 import ArticleDetailPage from "./pages/ArticleDetailPage";
 import DashboardPage from "./pages/DashboardPage";
+import DeskDetailPage from "./pages/DeskDetailPage";
+import DeskShiftPage from "./pages/DeskShiftPage";
 import FlowCreatePage from "./pages/FlowCreatePage";
 import FlowEditorPage from "./pages/FlowEditorPage";
 import FlowBatchComparisonPage from "./pages/FlowBatchComparisonPage";
 import FlowPerformancePage from "./pages/FlowPerformancePage";
 import FlowsPage from "./pages/FlowsPage";
 import PersonasPage from "./pages/PersonasPage";
+import PersonaDetailPage from "./pages/PersonaDetailPage";
 import ShiftsBoardPage from "./pages/ShiftsBoardPage";
 import ShiftRosterReviewPage from "./pages/ShiftRosterReviewPage";
 import StartFlowsPage from "./pages/StartFlowsPage";
@@ -50,12 +53,15 @@ export default function App() {
           <Route path="/articles/:runId" element={<ArticleDetailPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/desks" element={<DeskDetailPage />} />
+          <Route path="/desks/shift" element={<DeskShiftPage />} />
           <Route path="/flows" element={<FlowsPage />} />
           <Route path="/flows/new" element={<FlowCreatePage />} />
           <Route path="/flows/edit" element={<FlowEditorPage />} />
           <Route path="/flows/performance" element={<FlowPerformancePage />} />
           <Route path="/flows/batch" element={<FlowBatchComparisonPage />} />
           <Route path="/personas" element={<PersonasPage />} />
+          <Route path="/personas/:slug" element={<PersonaDetailPage />} />
           <Route path="/prompts/:topicSlug" element={<PromptsPage />} />
           <Route path="/runs/:runId" element={<RunDetailPage />} />
         </Routes>

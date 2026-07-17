@@ -47,6 +47,7 @@ export default function FlowEditorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const path = searchParams.get("path") || "";
+  const stepKey = searchParams.get("step") || "";
   const versionIdParam = searchParams.get("version_id");
   const versionId = versionIdParam ? Number(versionIdParam) : null;
   const [flow, setFlow] = useState<FlowDefinition | null>(null);
@@ -61,6 +62,14 @@ export default function FlowEditorPage() {
   useEffect(() => {
     void api.listPersonas().then((data) => setPersonas(data.personas)).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!stepKey || !flow) {
+      return;
+    }
+    const target = document.getElementById(`flow-step-${stepKey}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [stepKey, flow]);
 
   useEffect(() => {
     if (!path) return;
@@ -229,6 +238,8 @@ export default function FlowEditorPage() {
         </div>
       )}
       <p className="hint">
+        <Link to={`/desks?path=${encodeURIComponent(path)}`}>← Desk overview</Link>
+        {" · "}
         <code>{path}</code> · Templates: {"{{topic}}"}, {"{{feedback}}"}, {"{{step_key}}"} (e.g. {"{{writer}}"}).
         Review steps should end with <code>VERDICT: ACCEPT</code> or <code>VERDICT: REJECT</code>.
         Model and puller are chosen on <Link to="/start-flows">Plan a shift</Link>, not in the desk file.
@@ -354,7 +365,7 @@ export default function FlowEditorPage() {
         const isLast = index === steps.length - 1;
         const prior = earlierSteps(index);
         return (
-          <div key={step.step_id} className="step-card flow-step-card">
+          <div key={step.step_id} id={`flow-step-${step.step_key}`} className="step-card flow-step-card">
             <div className="flow-step-head">
               <h3>
                 Step {index + 1}: {step.label}

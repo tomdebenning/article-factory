@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type FlowTemplate } from "../api";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
+import { deskDetailUrl } from "../utils/desks";
 
 const STEP_COUNTS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
 
@@ -58,7 +59,7 @@ export default function FlowCreatePage() {
       })
       .then((result) => {
         notifyFlowsChanged();
-        navigate(`/flows/edit?path=${encodeURIComponent(result.path)}`, {
+        navigate(deskDetailUrl(result.path), {
           state: { flow_path: result.path },
         });
       })
@@ -80,7 +81,7 @@ export default function FlowCreatePage() {
       })
       .then((result) => {
         notifyFlowsChanged();
-        navigate(`/flows/edit?path=${encodeURIComponent(result.path)}`, {
+        navigate(deskDetailUrl(result.path), {
           state: { flow_path: result.path },
         });
       })

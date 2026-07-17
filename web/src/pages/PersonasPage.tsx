@@ -1,186 +1,51 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, type Persona } from "../api";
-
-const emptyDraft = (): Persona => ({
-  slug: "",
-  name: "",
-  description: "",
-  style_prompt: "",
-});
+import { personaDetailUrl } from "../utils/desks";
 
 export default function PersonasPage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [draft, setDraft] = useState<Persona>(emptyDraft);
-  const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  const reload = () => {
+  useEffect(() => {
     void api
       .listPersonas()
       .then((data) => setPersonas(data.personas))
       .catch((e: Error) => setError(e.message));
-  };
-
-  useEffect(() => {
-    reload();
   }, []);
-
-  const resetDraft = () => {
-    setDraft(emptyDraft());
-    setEditingSlug(null);
-    setError(null);
-  };
-
-  const startEdit = (persona: Persona) => {
-    setEditingSlug(persona.slug);
-    setDraft({ ...persona });
-    setError(null);
-    setMessage(null);
-  };
-
-  const save = () => {
-    const name = draft.name.trim();
-    const style_prompt = draft.style_prompt.trim();
-    if (!name) {
-      setError("Enter a staff member name.");
-      return;
-    }
-    if (!style_prompt) {
-      setError("Enter a style prompt.");
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-
-    const payload = {
-      name,
-      slug: draft.slug.trim() || undefined,
-      description: draft.description.trim(),
-      style_prompt,
-    };
-
-    const request = editingSlug
-      ? api.updatePersona(editingSlug, payload)
-      : api.createPersona(payload);
-
-    void request
-      .then(({ persona }) => {
-        setMessage(editingSlug ? `Updated “${persona.name}”.` : `Created “${persona.name}”.`);
-        resetDraft();
-        reload();
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false));
-  };
-
-  const remove = (persona: Persona) => {
-    if (!window.confirm(`Delete staff member “${persona.name}”?`)) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    void api
-      .deletePersona(persona.slug)
-      .then(() => {
-        if (editingSlug === persona.slug) {
-          resetDraft();
-        }
-        setMessage(`Deleted “${persona.name}”.`);
-        reload();
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setBusy(false));
-  };
 
   return (
     <section className="card personas-page">
-      <h2>Desk staff</h2>
-      <p className="hint">
-        Desk staff capture writing style and tone for reporters. In a later release you will assign them
-        to desk steps so their instructions are merged into each step&apos;s system prompt.
-      </p>
-      {error && <p className="error">{error}</p>}
-      {message && <p className="ok">{message}</p>}
-
-      <div className="personas-editor">
-        <h3>{editingSlug ? "Edit staff member" : "Add staff member"}</h3>
-        <label>
-          Name
-          <input
-            value={draft.name}
-            disabled={busy}
-            placeholder="Sports beat reporter"
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-        </label>
-        <label>
-          Slug (optional)
-          <input
-            value={draft.slug}
-            disabled={busy}
-            placeholder="sports-beat-reporter"
-            onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-          />
-        </label>
-        <label>
-          Short description
-          <input
-            value={draft.description}
-            disabled={busy}
-            placeholder="Energetic, fan-friendly coverage"
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          />
-        </label>
-        <label>
-          Style prompt
-          <textarea
-            rows={8}
-            value={draft.style_prompt}
-            disabled={busy}
-            placeholder="Write in a concise, energetic sports journalism voice. Use active verbs, short paragraphs, and avoid jargon unless explaining it for casual readers."
-            onChange={(e) => setDraft({ ...draft, style_prompt: e.target.value })}
-          />
-        </label>
-        <div className="personas-editor-actions">
-          <button type="button" className="primary" disabled={busy} onClick={save}>
-            {busy ? "Saving…" : editingSlug ? "Save changes" : "Add staff member"}
-          </button>
-          {editingSlug && (
-            <button type="button" className="secondary" disabled={busy} onClick={resetDraft}>
-              Cancel edit
-            </button>
-          )}
+      <div className="dashboard-section-head">
+        <div>
+          <h2>Desk staff</h2>
+          <p className="hint">
+            Reporter voices for your desks. Assign staff to a desk from that desk&apos;s reporter pool.
+          </p>
         </div>
+        <Link to="/personas/new" className="primary">
+          Add staff member
+        </Link>
       </div>
+      {error && <p className="error">{error}</p>}
 
-      <h3>Saved desk staff</h3>
       {personas.length === 0 ? (
-        <p className="hint">No desk staff yet. Add someone above to define a reporter voice.</p>
+        <div className="desk-empty-panel">
+          <p>No desk staff yet.</p>
+          <Link to="/personas/new" className="desk-tile desk-tile-create">
+            Create your first staff member
+          </Link>
+        </div>
       ) : (
-        <ul className="personas-list">
+        <div className="desk-button-row">
           {personas.map((persona) => (
-            <li key={persona.slug} className="personas-list-item">
-              <div className="personas-list-main">
-                <strong>{persona.name}</strong>
-                <span className="hint personas-slug">{persona.slug}</span>
-                {persona.description && <p className="hint">{persona.description}</p>}
-                <pre className="personas-preview">{persona.style_prompt}</pre>
-              </div>
-              <div className="personas-list-actions">
-                <button type="button" className="secondary" disabled={busy} onClick={() => startEdit(persona)}>
-                  Edit
-                </button>
-                <button type="button" className="secondary" disabled={busy} onClick={() => remove(persona)}>
-                  Delete
-                </button>
-              </div>
-            </li>
+            <Link key={persona.slug} to={personaDetailUrl(persona.slug)} className="desk-tile">
+              <span className="desk-tile-label">{persona.name}</span>
+              <span className="desk-tile-role">Reporter</span>
+              {persona.description ? <span className="desk-tile-meta">{persona.description}</span> : null}
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
     </section>
   );

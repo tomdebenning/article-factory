@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, DEFAULT_FLOW_PATH, type FlowTreeNode } from "../api";
 import { downloadFlowJson, readFlowJsonFile } from "../utils/flowFiles";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
+import { deskDetailUrl } from "../utils/desks";
 import FlowMoveForm from "../components/FlowMoveForm";
 
 function isTemplateFlowPath(path: string): boolean {
@@ -363,7 +364,7 @@ export default function FlowsPage() {
               {folderFlows.map((flow) => (
                 <li key={flow.path} className="flow-file-list-item">
                   <div className="flow-file-list-main">
-                    <Link to={`/flows/edit?path=${encodeURIComponent(flow.path)}`}>
+                    <Link to={deskDetailUrl(flow.path)}>
                       <strong>{flow.display_name}</strong>
                     </Link>
                     <span className="hint">{flow.path}</span>
@@ -373,8 +374,11 @@ export default function FlowsPage() {
                     </span>
                   </div>
                   <div className="flow-file-list-actions">
+                    <Link to={deskDetailUrl(flow.path)} className="secondary">
+                      Open desk
+                    </Link>
                     <Link to={`/flows/edit?path=${encodeURIComponent(flow.path)}`} className="secondary">
-                      Edit
+                      Edit pipeline
                     </Link>
                     <Link
                       to={`/flows/performance?path=${encodeURIComponent(flow.path)}`}
