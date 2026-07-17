@@ -42,6 +42,9 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
     "shift_desk_slots": [
         ("reporter_selection_mode", "VARCHAR(32) NOT NULL DEFAULT 'round_robin'"),
     ],
+    "completed_articles": [
+        ("edition_headline", "VARCHAR(256) NOT NULL DEFAULT ''"),
+    ],
     "shift_assignments": [
         ("reporter_persona_slug", "VARCHAR(64)"),
         ("source", "VARCHAR(16) NOT NULL DEFAULT 'manual'"),

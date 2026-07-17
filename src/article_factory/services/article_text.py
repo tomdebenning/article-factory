@@ -21,3 +21,15 @@ def headline_from_markdown(text: str, *, max_words: int = 8) -> str:
 
 def article_has_content(text: str) -> bool:
     return bool((text or "").strip())
+
+
+def strip_leading_h1_markdown(text: str) -> str:
+    """Remove the first markdown heading so the Edition H1 is not duplicated in the body."""
+    lines = (text or "").splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and re.match(r"^#\s", lines[0]):
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+    return "\n".join(lines).strip()

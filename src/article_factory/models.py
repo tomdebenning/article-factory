@@ -274,6 +274,7 @@ class CompletedArticle(Base):
     queue_item_id: Mapped[int | None] = mapped_column(ForeignKey("topic_queue.id"), nullable=True)
     topic_slug: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(256))
+    edition_headline: Mapped[str] = mapped_column(String(256), default="")
     summary: Mapped[str] = mapped_column(Text, default="")
     body_markdown: Mapped[str] = mapped_column(Text)
     manifest: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

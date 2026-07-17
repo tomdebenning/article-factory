@@ -31,7 +31,8 @@ from article_factory.orchestrator.pipeline import (
 )
 from article_factory.services.flow_paths import resolve_default_flow_path
 from article_factory.services.flow_storage import read_flow
-from article_factory.services.article_text import article_has_content, headline_from_markdown
+from article_factory.services.article_text import article_has_content, headline_from_markdown, strip_leading_h1_markdown
+from article_factory.services.headline_generator import generate_edition_headline
 from article_factory.services.showroom_publish import publish_article_to_showroom
 from article_factory.services.token_usage import enrich_manifest, enrich_step_record
 from article_factory.services.showroom_status_sync import (
@@ -168,6 +169,8 @@ async def _complete_run(
         return
 
     title_line = headline_from_markdown(draft)
+    edition_headline = await generate_edition_headline(db, draft=draft, run=run)
+    display_body = strip_leading_h1_markdown(draft)
     enriched_records = [
         enrich_step_record(
             record,
@@ -186,7 +189,7 @@ async def _complete_run(
             step_executions_payload(db, run.run_id),
         ),
         selected_model=run.selected_model,
-        body_markdown=draft,
+        body_markdown=display_body,
     )
     apply_run_performance(db, run, enriched_records)
     run.status = "completed"
@@ -199,8 +202,9 @@ async def _complete_run(
             queue_item_id=run.queue_item_id,
             topic_slug=run.topic_slug,
             title=title_line,
-            summary=draft[:280],
-            body_markdown=draft,
+            edition_headline=edition_headline,
+            summary=display_body[:280],
+            body_markdown=display_body,
             manifest=manifest,
         )
     )

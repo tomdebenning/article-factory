@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from article_factory.cms_client import CmsClient, CmsRequestError, best_effort_showroom
 from article_factory.models import CompletedArticle, FactoryRun
-from article_factory.services.article_text import article_has_content, headline_from_markdown
+from article_factory.services.article_text import article_has_content, headline_from_markdown, strip_leading_h1_markdown
 from article_factory.services.run_attachments import collect_run_workspace_attachments
 from article_factory.services.step_trace import merge_tools_into_manifest, step_executions_payload
 from article_factory.services.token_usage import enrich_manifest
@@ -39,12 +39,14 @@ def build_publish_payload(
     )
     if not manifest.get("selected_puller") and run.selected_puller:
         manifest = {**manifest, "selected_puller": run.selected_puller}
-    title = headline_from_markdown(article.body_markdown)
+    edition_headline = (article.edition_headline or "").strip() or headline_from_markdown(article.body_markdown)
+    display_body = strip_leading_h1_markdown(article.body_markdown)
     article_payload = {
-        "slug": slugify_title(title),
-        "title": title,
+        "slug": slugify_title(edition_headline),
+        "title": edition_headline,
+        "edition_headline": edition_headline,
         "summary": article.summary,
-        "body_markdown": article.body_markdown,
+        "body_markdown": display_body,
         "published_at": datetime.now(timezone.utc).isoformat(),
     }
     if manifest.get("reported_by"):
@@ -79,6 +81,8 @@ async def publish_article_to_showroom(
     article.manifest = payload["manifest"]
     run.manifest = payload["manifest"]
     article.title = payload["article"]["title"]
+    article.edition_headline = payload["article"]["edition_headline"]
+    article.body_markdown = payload["article"]["body_markdown"]
     db.commit()
 
     result = await cms.post_run_complete(payload)
