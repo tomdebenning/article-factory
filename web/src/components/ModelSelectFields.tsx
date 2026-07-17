@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type PullerInfo } from "../api";
-import { activePullers, modelsFromActivePullers } from "../utils/pullers";
+import { activePullers, modelsFromActivePullers, pullerStatusDetail } from "../utils/pullers";
 
 type Props = {
   model: string;
@@ -19,15 +19,28 @@ export default function ModelSelectFields({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api
-      .listPullers()
-      .then((data) => setPullers(data.pullers))
-      .catch((e: Error) => setError(e.message));
+    const load = () => {
+      void api
+        .listPullers()
+        .then((data) => {
+          setPullers(data.pullers);
+          setError(null);
+        })
+        .catch((e: Error) => setError(e.message));
+    };
+    load();
+    const timer = setInterval(load, 3000);
+    return () => clearInterval(timer);
   }, []);
 
   const modelOptions = useMemo(() => modelsFromActivePullers(pullers), [pullers]);
 
   const activeCount = useMemo(() => activePullers(pullers).length, [pullers]);
+
+  const sortedPullers = useMemo(
+    () => [...pullers].sort((a, b) => a.puller_name.localeCompare(b.puller_name)),
+    [pullers],
+  );
 
   return (
     <div className="model-select-fields">
@@ -52,6 +65,22 @@ export default function ModelSelectFields({
         )}
       </label>
       <p className="hint">{hint}</p>
+      {sortedPullers.length > 0 && (
+        <div className="puller-status-grid" aria-label="Control plane pullers">
+          {sortedPullers.map((puller) => {
+            const running = puller.status === "busy" || Boolean(puller.current_task);
+            return (
+              <div
+                key={puller.puller_name}
+                className={`puller-status-card${running ? " puller-status-card--running" : ""}`}
+              >
+                <span className="puller-status-name">{puller.puller_name}</span>
+                <span className="puller-status-detail">{pullerStatusDetail(puller)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {activeCount > 0 && (
         <p className="hint">{activeCount} active puller(s) on the control plane.</p>
       )}

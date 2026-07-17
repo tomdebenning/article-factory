@@ -13,6 +13,7 @@ from article_factory.config import settings
 from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.models import FactoryRun, TopicQueueItem
 from article_factory.orchestrator.pipeline import push_factory_status
+from article_factory.services.factory_identity import load_factory_identity
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
 from article_factory.services.showroom_puller_meta import build_pullers_system_meta
 
@@ -40,16 +41,18 @@ def _active_runs(db: Session) -> list[FactoryRun]:
 
 
 async def _pullers_system_meta(db: Session) -> dict[str, Any] | None:
+    identity = load_factory_identity(db)
     runtime = load_runtime_settings(db)
+    factory_name = identity.gateway_display_name
     if not runtime.control_plane_url.strip():
-        return None
+        return build_pullers_system_meta([], factory_name=factory_name)
     try:
         cp = ControlPlaneClient(base_url=runtime.control_plane_url)
         pullers = await cp.list_pullers(active_only=False)
-        return build_pullers_system_meta(pullers)
+        return build_pullers_system_meta(pullers, factory_name=factory_name)
     except Exception:
         logger.debug("Could not fetch pullers for Showroom status sync", exc_info=True)
-        return None
+        return build_pullers_system_meta([], factory_name=factory_name)
 
 
 async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:

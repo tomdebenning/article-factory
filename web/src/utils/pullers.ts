@@ -4,6 +4,20 @@ export function isActivePuller(puller: PullerInfo): boolean {
   return puller.is_active && !puller.is_stale;
 }
 
+export function pullerRunningModel(puller: PullerInfo): string | null {
+  const model = puller.current_task?.model?.trim();
+  return model || null;
+}
+
+export function pullerStatusDetail(puller: PullerInfo): string {
+  const runningModel = pullerRunningModel(puller);
+  if (runningModel) return runningModel;
+  if (puller.status === "busy") return "Generating";
+  if (!isActivePuller(puller)) return puller.is_stale ? "Stale" : "Offline";
+  if (puller.status === "idle") return "Idle";
+  return puller.status || "—";
+}
+
 export function modelsFromActivePullers(pullers: PullerInfo[]): string[] {
   const names = new Set<string>();
   for (const puller of pullers) {

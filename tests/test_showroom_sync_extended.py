@@ -17,9 +17,28 @@ from article_factory.services.showroom_status_sync import (
 
 
 @pytest.mark.asyncio
-async def test_push_showroom_factory_status_with_runs(configured_db) -> None:
+async def test_push_showroom_factory_status_with_runs(configured_db, monkeypatch) -> None:
     from article_factory.db import SessionLocal
     from article_factory.models import FactoryRun
+
+    monkeypatch.setattr(
+        "article_factory.services.showroom_status_sync._pullers_system_meta",
+        AsyncMock(
+            return_value={
+                "factory_name": "Test Factory",
+                "pullers": [
+                    {
+                        "name": "gpu-west",
+                        "status": "busy",
+                        "is_active": True,
+                        "is_idle": False,
+                        "current_task": {"model": "llama-local"},
+                    }
+                ],
+                "pullers_online": 1,
+            }
+        ),
+    )
 
     db = SessionLocal()
     try:
@@ -31,6 +50,7 @@ async def test_push_showroom_factory_status_with_runs(configured_db) -> None:
         payload = cms.put_factory_status.await_args.args[0]
         assert payload["state"] == "running"
         assert payload["topic_slug"] == "sports"
+        assert payload["system_meta"]["pullers"][0]["current_task"]["model"] == "llama-local"
     finally:
         db.close()
 

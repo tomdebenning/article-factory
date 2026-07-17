@@ -102,6 +102,7 @@ export type PullerInfo = {
   is_active: boolean;
   is_stale: boolean;
   last_heartbeat_at?: string | null;
+  current_task?: { model?: string; conversation_id?: string; status?: string } | null;
 };
 
 export type StepUsage = {

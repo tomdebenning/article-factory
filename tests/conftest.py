@@ -50,9 +50,14 @@ def client(configured_db, monkeypatch) -> TestClient:
         return None
 
     from article_factory.orchestrator.runner import factory_loop
+    from article_factory.services.control_plane_heartbeat import control_plane_heartbeat_loop
+    from article_factory.services.prompt_improvement_runner import prompt_improvement_runner
+    from article_factory.services.showroom_status_sync import showroom_status_loop
 
-    monkeypatch.setattr(factory_loop, "start", noop_start)
-    monkeypatch.setattr(factory_loop, "stop", noop_stop)
+    monkeypatch.setattr(prompt_improvement_runner, "start", noop_start)
+    for loop in (factory_loop, control_plane_heartbeat_loop, showroom_status_loop):
+        monkeypatch.setattr(loop, "start", noop_start)
+        monkeypatch.setattr(loop, "stop", noop_stop)
     monkeypatch.setattr(factory_loop, "_running", True)
 
     with TestClient(create_app()) as test_client:

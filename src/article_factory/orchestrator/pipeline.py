@@ -88,6 +88,8 @@ async def push_factory_status(
     else:
         payload["active_run"] = None
         payload["active_runs"] = []
+    if system_meta:
+        payload["system_meta"] = system_meta
     await cms.put_factory_status(payload)
 
 

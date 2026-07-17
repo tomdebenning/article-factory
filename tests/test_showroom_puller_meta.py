@@ -19,6 +19,7 @@ def test_build_pullers_system_meta() -> None:
                 "is_active": True,
                 "is_stale": False,
                 "supported_models": ["gemma4:31b"],
+                "current_task": {"model": "gemma4:31b", "conversation_id": "conv-1"},
             },
             {
                 "puller_name": "offline-node",
@@ -27,11 +28,14 @@ def test_build_pullers_system_meta() -> None:
                 "is_stale": False,
                 "supported_models": [],
             },
-        ]
+        ],
+        factory_name="Night Factory",
     )
+    assert meta["factory_name"] == "Night Factory"
     assert meta["pullers_online"] == 2
     assert [item["name"] for item in meta["pullers"]] == ["gpu-east", "gpu-west", "offline-node"]
     assert meta["pullers"][0]["online"] is True
     assert meta["pullers"][0]["is_idle"] is False
+    assert meta["pullers"][0]["current_task"]["model"] == "gemma4:31b"
     assert meta["pullers"][1]["is_idle"] is True
     assert meta["pullers"][2]["online"] is False
