@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from article_factory.cms_client import CmsClient
 from article_factory.control_plane.client import ControlPlaneClient
-from article_factory.models import FactoryRun
+from article_factory.models import FactoryRun, Persona
 from article_factory.services.flow_paths import resolve_default_flow_path
 from article_factory.services.flow_schema import FlowDefinition, FlowStep, FlowStepCompletion
 from article_factory.services.flow_storage import read_flow, save_step_response_to_disk
@@ -27,6 +27,8 @@ from article_factory.services.run_control import (
 )
 from article_factory.services.run_recovery import save_pipeline_state
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
+from article_factory.services.flow_roles import is_producer_step, resolve_flow_roles
+from article_factory.services.persona_selection import merge_persona_style_prompt
 from article_factory.services.step_trace import StepTracer
 from article_factory.services.review_parser import review_json_prompt_instructions
 from article_factory.services.step_tools import is_review_loop_step, resolve_step_tools
@@ -83,6 +85,7 @@ async def execute_flow_pipeline(
 ) -> FactoryRun:
     flow = resolve_flow_for_run(db, run)
     steps = sorted_steps(flow)
+    roles = resolve_flow_roles(flow)
     cp = ControlPlaneClient(base_url=runtime.control_plane_url)
     run_model = run.selected_model or runtime.default_model
     if not run_model:
@@ -136,6 +139,10 @@ async def execute_flow_pipeline(
             step_puller = run_puller
             step_model = run_model
             system_prompt = step.system_prompt
+            if is_producer_step(step.step_key, roles) and (run.reporter_persona_slug or "").strip():
+                persona = db.query(Persona).filter_by(slug=run.reporter_persona_slug.strip()).one_or_none()
+                if persona is not None:
+                    system_prompt = merge_persona_style_prompt(system_prompt, persona.style_prompt)
             if is_review_loop_step(step):
                 system_prompt = f"{system_prompt.rstrip()}{review_json_prompt_instructions()}"
             ctx = StepContext(
@@ -162,6 +169,9 @@ async def execute_flow_pipeline(
             )
             record = await run_step_from_context(ctx, cp, run_id=run.run_id, tracer=tracer)
             db.refresh(run)
+            if is_producer_step(step.step_key, roles) and (run.reporter_persona_name or "").strip():
+                record["persona_name"] = run.reporter_persona_name
+                record["persona_slug"] = run.reporter_persona_slug
             if run.status != "running" or await is_run_cancelled(run.run_id):
                 raise RunCancelledError(f"Run {run.run_id} was stopped")
             step_records.append(record)

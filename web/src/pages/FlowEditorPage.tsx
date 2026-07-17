@@ -55,6 +55,11 @@ export default function FlowEditorPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [personas, setPersonas] = useState<Array<{ slug: string; name: string }>>([]);
+
+  useEffect(() => {
+    void api.listPersonas().then((data) => setPersonas(data.personas)).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!path) return;
@@ -258,6 +263,48 @@ export default function FlowEditorPage() {
         Display name
         <input value={flow.display_name} onChange={(e) => setFlow({ ...flow, display_name: e.target.value })} />
       </label>
+
+      {!readOnlyVersion && (
+        <div className="step-card flow-reporter-pool-card">
+          <h3>Reporter pool</h3>
+          <p className="hint">
+            Desk staff who can cover the Reporter role on this desk. Assignments pick from this pool when a shift runs
+            (round robin or least recently used).
+          </p>
+          {personas.length === 0 ? (
+            <p className="hint">
+              No desk staff yet. <Link to="/personas">Create reporters</Link> first.
+            </p>
+          ) : (
+            <ul className="flow-reporter-pool-list">
+              {personas.map((persona) => {
+                const pool = flow.reporter_pool || [];
+                const checked = pool.includes(persona.slug);
+                return (
+                  <li key={persona.slug}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = new Set(flow.reporter_pool || []);
+                          if (e.target.checked) {
+                            next.add(persona.slug);
+                          } else {
+                            next.delete(persona.slug);
+                          }
+                          setFlow({ ...flow, reporter_pool: [...next] });
+                        }}
+                      />
+                      {persona.name}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
       <label>
         Max iterations (review loops)
         <input

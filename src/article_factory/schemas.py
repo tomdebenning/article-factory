@@ -215,6 +215,7 @@ class ShiftDeskSlotBody(BaseModel):
     topic_slug: str = "general"
     name: str = ""
     flow_version_id: int | None = None
+    reporter_selection_mode: str = "round_robin"
 
 
 class ShiftAssignmentsBody(BaseModel):

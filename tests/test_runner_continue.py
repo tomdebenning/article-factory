@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import article_factory.db as db_module
-from article_factory.models import FactoryRun, TopicQueueItem
+from article_factory.models import FactoryRun, StepExecution, TopicQueueItem
 from article_factory.orchestrator.runner import (
     FactoryLoop,
     _complete_run,
@@ -42,6 +42,16 @@ async def test_continue_active_run_fails_interrupted(configured_db, monkeypatch)
             current_step="writer",
         )
         db.add(run)
+        db.flush()
+        db.add(
+            StepExecution(
+                run_id=run.run_id,
+                step_key="writer",
+                status="completed",
+                puller="puller-1",
+                model="test-model",
+            )
+        )
         db.commit()
 
         monkeypatch.setattr(

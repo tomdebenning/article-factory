@@ -12,6 +12,7 @@ type DeskDraft = {
   desk_path: string;
   topic_slug: string;
   topics: string[];
+  reporter_selection_mode: "round_robin" | "lru";
 };
 
 const emptyDesk = (deskPath = ""): DeskDraft => ({
@@ -19,6 +20,7 @@ const emptyDesk = (deskPath = ""): DeskDraft => ({
   desk_path: deskPath,
   topic_slug: "general",
   topics: [],
+  reporter_selection_mode: "round_robin",
 });
 
 export default function StartFlowsPage() {
@@ -67,6 +69,8 @@ export default function StartFlowsPage() {
                   desk_path: desk.desk_path,
                   topic_slug: desk.topic_slug,
                   topics: (desk.assignments || []).map((assignment) => assignment.prompt),
+                  reporter_selection_mode:
+                    desk.reporter_selection_mode === "lru" ? "lru" : "round_robin",
                 }))
               : [emptyDesk(settings?.default_flow_path || "")],
           );
@@ -155,6 +159,7 @@ export default function StartFlowsPage() {
           desk_path: desk.desk_path,
           topic_slug: desk.topic_slug,
           name: desk.name.trim() || desk.desk_path,
+          reporter_selection_mode: desk.reporter_selection_mode,
         })),
         assignments_by_desk_index,
         save_preset: savePreset,
@@ -234,6 +239,20 @@ export default function StartFlowsPage() {
                         {option.label}
                       </option>
                     ))}
+                  </select>
+                </label>
+                <label>
+                  Reporter selection
+                  <select
+                    value={desk.reporter_selection_mode}
+                    onChange={(e) =>
+                      updateDesk(index, {
+                        reporter_selection_mode: e.target.value === "lru" ? "lru" : "round_robin",
+                      })
+                    }
+                  >
+                    <option value="round_robin">Round robin from desk pool</option>
+                    <option value="lru">Least recently used from desk pool</option>
                   </select>
                 </label>
               </div>

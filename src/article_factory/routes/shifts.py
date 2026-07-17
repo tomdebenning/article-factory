@@ -71,6 +71,7 @@ def post_desk_slot(plan_id: int, body: ShiftDeskSlotBody, db: Session = Depends(
             topic_slug=body.topic_slug,
             name=body.name,
             flow_version_id=body.flow_version_id,
+            reporter_selection_mode=body.reporter_selection_mode,
         )
         db.commit()
         db.refresh(slot)
@@ -171,6 +172,7 @@ def save_shift_plan(body: ShiftPlanSaveBody, db: Session = Depends(get_db)) -> d
             topic_slug=desk_body.topic_slug,
             name=desk_body.name,
             flow_version_id=desk_body.flow_version_id,
+            reporter_selection_mode=desk_body.reporter_selection_mode,
         )
         prompts = body.assignments_by_desk_index.get(str(index), [])
         if prompts:

@@ -245,6 +245,7 @@ export type ShiftDeskSlotSummary = {
   topic_slug: string;
   flow_version_id?: number | null;
   dispatch_order: number;
+  reporter_selection_mode?: string;
   assignment_counts: ShiftAssignmentCounts;
   assignment_total: number;
   assignments?: Array<{
@@ -563,6 +564,7 @@ export type FlowDefinition = {
     gate_step_key?: string | null;
     producer_step_keys?: string[];
   } | null;
+  reporter_pool?: string[];
   steps: FlowStep[];
 };
 
@@ -1174,7 +1176,13 @@ export const api = {
   saveShiftPlan: (body: {
     window_key: string;
     default_model: string;
-    desks: Array<{ desk_path: string; topic_slug: string; name?: string; flow_version_id?: number | null }>;
+    desks: Array<{
+      desk_path: string;
+      topic_slug: string;
+      name?: string;
+      flow_version_id?: number | null;
+      reporter_selection_mode?: string;
+    }>;
     assignments_by_desk_index: Record<string, string[]>;
     save_preset?: boolean;
     preset_name?: string;

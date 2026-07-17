@@ -32,20 +32,24 @@ def select_pending_assignments_round_robin(
         return [], start_index
 
     picked: list[tuple[ShiftAssignment, ShiftDeskSlot, ShiftPlan]] = []
+    picked_ids: set[int] = set()
     index = start_index % len(desks)
     attempts = 0
     max_attempts = len(desks) * max(limit, 1)
 
     while len(picked) < limit and attempts < max_attempts:
         desk = desks[index]
-        assignment = (
+        query = (
             db.query(ShiftAssignment)
             .filter_by(shift_desk_slot_id=desk.id, status="pending")
             .order_by(ShiftAssignment.priority, ShiftAssignment.id)
-            .first()
         )
+        if picked_ids:
+            query = query.filter(~ShiftAssignment.id.in_(picked_ids))
+        assignment = query.first()
         if assignment is not None:
             picked.append((assignment, desk, active_plan))
+            picked_ids.add(assignment.id)
         index = (index + 1) % len(desks)
         attempts += 1
 

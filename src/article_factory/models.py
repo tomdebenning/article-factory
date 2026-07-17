@@ -105,6 +105,7 @@ class ShiftDeskSlot(Base):
     topic_slug: Mapped[str] = mapped_column(String(64), default="general")
     flow_version_id: Mapped[int | None] = mapped_column(ForeignKey("flow_versions.id"), nullable=True)
     dispatch_order: Mapped[int] = mapped_column(Integer, default=100)
+    reporter_selection_mode: Mapped[str] = mapped_column(String(32), default="round_robin")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -119,6 +120,7 @@ class ShiftAssignment(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     priority: Mapped[int] = mapped_column(Integer, default=100)
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    reporter_persona_slug: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -136,6 +138,8 @@ class FactoryRun(Base):
     shift_assignment_id: Mapped[int | None] = mapped_column(
         ForeignKey("shift_assignments.id"), nullable=True, index=True
     )
+    reporter_persona_slug: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    reporter_persona_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="running")
     current_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
     selected_puller: Mapped[str] = mapped_column(String(128), default="")

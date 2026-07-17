@@ -50,6 +50,7 @@ def _desk_payload(db: Session, slot: ShiftDeskSlot) -> dict[str, Any]:
         "topic_slug": slot.topic_slug,
         "flow_version_id": slot.flow_version_id,
         "dispatch_order": slot.dispatch_order,
+        "reporter_selection_mode": slot.reporter_selection_mode,
         "assignment_counts": tally,
         "assignment_total": len(rows),
         "assignments": [
@@ -143,6 +144,7 @@ def add_desk_slot(
     topic_slug: str = "general",
     name: str = "",
     flow_version_id: int | None = None,
+    reporter_selection_mode: str = "round_robin",
 ) -> ShiftDeskSlot:
     plan = get_shift_plan(db, plan_id)
     if plan.status == "complete":
@@ -157,6 +159,9 @@ def add_desk_slot(
         .first()
     )
     next_order = (max_order[0] + 100) if max_order else 100
+    mode = (reporter_selection_mode or "round_robin").strip().lower()
+    if mode not in {"round_robin", "lru"}:
+        mode = "round_robin"
     slot = ShiftDeskSlot(
         shift_plan_id=plan.id,
         name=(name or "").strip() or cleaned_path,
@@ -164,6 +169,7 @@ def add_desk_slot(
         topic_slug=(topic_slug or "general").strip() or "general",
         flow_version_id=flow_version_id,
         dispatch_order=next_order,
+        reporter_selection_mode=mode,
     )
     db.add(slot)
     db.flush()

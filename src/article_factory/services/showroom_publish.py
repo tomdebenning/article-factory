@@ -40,16 +40,19 @@ def build_publish_payload(
     if not manifest.get("selected_puller") and run.selected_puller:
         manifest = {**manifest, "selected_puller": run.selected_puller}
     title = headline_from_markdown(article.body_markdown)
+    article_payload = {
+        "slug": slugify_title(title),
+        "title": title,
+        "summary": article.summary,
+        "body_markdown": article.body_markdown,
+        "published_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if manifest.get("reported_by"):
+        article_payload["reported_by"] = manifest["reported_by"]
     return {
         "run_id": run.run_id,
         "topic_slug": run.topic_slug,
-        "article": {
-            "slug": slugify_title(title),
-            "title": title,
-            "summary": article.summary,
-            "body_markdown": article.body_markdown,
-            "published_at": datetime.now(timezone.utc).isoformat(),
-        },
+        "article": article_payload,
         "manifest": manifest,
         "attachments": collect_run_workspace_attachments(run.run_id),
     }

@@ -13,6 +13,7 @@ from article_factory.services.flow_paths import resolve_default_flow_path
 from article_factory.services.flow_queues import ensure_default_flow_queue, list_flow_queues, resolve_queue_flow_path
 from article_factory.services.flow_storage import ensure_default_flows
 from article_factory.orchestrator.runner import factory_loop, run_pipeline_for_topic
+from article_factory.services.showroom_publish import publish_article_to_showroom
 from article_factory.services.showroom_status_sync import showroom_status_loop, sync_showroom_when_factory_busy
 from article_factory.services.run_control import (
     is_run_cancelled,

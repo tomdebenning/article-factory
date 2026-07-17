@@ -408,9 +408,15 @@ async def test_factory_loop_processes_queue(configured_db, monkeypatch) -> None:
         selected_puller=None,
         flow_path=None,
         flow_version_id=None,
+        shift_assignment_id=None,
+        **kwargs,
     ):
         started.append(selected_puller)
-        run = FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
+        run = FactoryRun(
+            run_id=f"run-{shift_assignment_id or queue_item_id}",
+            topic_slug=topic_slug,
+            status="completed",
+        )
         db.add(run)
         db.commit()
         return run
@@ -431,6 +437,7 @@ async def test_factory_loop_processes_queue(configured_db, monkeypatch) -> None:
     monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
 
     from article_factory.services.runtime_settings import update_factory_settings
+    from tests.shift_test_helpers import seed_active_shift_assignments
 
     db = db_module.SessionLocal()
     try:
@@ -438,8 +445,7 @@ async def test_factory_loop_processes_queue(configured_db, monkeypatch) -> None:
             db,
             {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
         )
-        db.add(TopicQueueItem(topic_slug="sports", prompt="From queue"))
-        db.commit()
+        seed_active_shift_assignments(db)
     finally:
         db.close()
 
@@ -514,10 +520,12 @@ async def test_factory_loop_parallel_dispatch(configured_db, monkeypatch) -> Non
         selected_puller=None,
         flow_path=None,
         flow_version_id=None,
+        shift_assignment_id=None,
+        **kwargs,
     ):
         started.append(selected_puller)
         run = FactoryRun(
-            run_id=f"run-{queue_item_id}",
+            run_id=f"run-{shift_assignment_id or queue_item_id}",
             topic_slug=topic_slug,
             status="running",
             selected_puller=selected_puller,
@@ -549,6 +557,7 @@ async def test_factory_loop_parallel_dispatch(configured_db, monkeypatch) -> Non
     monkeypatch.setattr("article_factory.orchestrator.runner.run_pipeline_for_topic", fake_pipeline)
 
     from article_factory.services.runtime_settings import update_factory_settings
+    from tests.shift_test_helpers import seed_active_shift_assignments
 
     db = db_module.SessionLocal()
     try:
@@ -556,9 +565,7 @@ async def test_factory_loop_parallel_dispatch(configured_db, monkeypatch) -> Non
             db,
             {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
         )
-        db.add(TopicQueueItem(topic_slug="sports", prompt="First"))
-        db.add(TopicQueueItem(topic_slug="sports", prompt="Second"))
-        db.commit()
+        seed_active_shift_assignments(db, prompts=["First", "Second"])
     finally:
         db.close()
 
@@ -934,9 +941,15 @@ async def test_dispatch_clears_stale_puller_reservations(configured_db, monkeypa
         selected_puller=None,
         flow_path=None,
         flow_version_id=None,
+        shift_assignment_id=None,
+        **kwargs,
     ):
         started.append(selected_puller)
-        run = FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
+        run = FactoryRun(
+            run_id=f"run-{shift_assignment_id or queue_item_id}",
+            topic_slug=topic_slug,
+            status="completed",
+        )
         db.add(run)
         db.commit()
         return run
@@ -960,13 +973,13 @@ async def test_dispatch_clears_stale_puller_reservations(configured_db, monkeypa
     db = db_module.SessionLocal()
     try:
         from article_factory.services.runtime_settings import update_factory_settings
+        from tests.shift_test_helpers import seed_active_shift_assignments
 
         update_factory_settings(
             db,
             {"control_plane_url": "http://cp.test:8000", "default_model": "test-model"},
         )
-        db.add(TopicQueueItem(topic_slug="sports", prompt="Queued"))
-        db.commit()
+        seed_active_shift_assignments(db, prompts=["Queued"])
     finally:
         db.close()
 
@@ -1165,8 +1178,8 @@ async def test_run_queue_item_clears_puller_reservation(configured_db, monkeypat
 
 @pytest.mark.asyncio
 async def test_dispatch_passes_flow_version_from_queue(configured_db, monkeypatch) -> None:
-    from article_factory.models import FlowQueue
     from article_factory.services.flow_versions import ensure_flow_version_for_run
+    from tests.shift_test_helpers import seed_active_shift_assignments
 
     loop = FactoryLoop()
     captured: list[int | None] = []
@@ -1180,9 +1193,15 @@ async def test_dispatch_passes_flow_version_from_queue(configured_db, monkeypatc
         selected_puller=None,
         flow_path=None,
         flow_version_id=None,
+        shift_assignment_id=None,
+        **kwargs,
     ):
         captured.append(flow_version_id)
-        return FactoryRun(run_id=f"run-{queue_item_id}", topic_slug=topic_slug, status="completed")
+        return FactoryRun(
+            run_id=f"run-{shift_assignment_id or queue_item_id}",
+            topic_slug=topic_slug,
+            status="completed",
+        )
 
     mock_cp = AsyncMock()
     mock_cp.list_pullers = AsyncMock(
@@ -1209,23 +1228,11 @@ async def test_dispatch_passes_flow_version_from_queue(configured_db, monkeypatc
         )
         version = ensure_flow_version_for_run(db, "sports/standard-4-step.flow.json")
         version_id = version.id
-        queue = FlowQueue(
-            slug="versioned",
-            name="Versioned",
-            flow_path="sports/standard-4-step.flow.json",
-            flow_version_id=version.id,
-            topic_slug="sports",
+        seed_active_shift_assignments(
+            db,
+            prompts=["Versioned assignment"],
+            flow_version_id=version_id,
         )
-        db.add(queue)
-        db.flush()
-        db.add(
-            TopicQueueItem(
-                flow_queue_id=queue.id,
-                topic_slug="sports",
-                prompt="Versioned queue",
-            )
-        )
-        db.commit()
     finally:
         db.close()
 

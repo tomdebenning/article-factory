@@ -41,6 +41,8 @@ from article_factory.services.showroom_status_sync import (
 )
 from article_factory.services.flow_queues import ensure_default_flow_queue
 from article_factory.services.shift_dispatch import mark_assignment_status, select_pending_assignments_round_robin
+from article_factory.services.persona_selection import assign_reporter_to_assignment, persona_display_name
+from article_factory.services.run_provenance import enrich_manifest_with_run_context
 from article_factory.services.puller_selection import idle_pullers_for_model
 from article_factory.services.run_control import (
     RunCancelledError,
@@ -176,7 +178,11 @@ async def _complete_run(
     ]
     manifest = enrich_manifest(
         merge_tools_into_manifest(
-            build_manifest(run, enriched_records),
+            enrich_manifest_with_run_context(
+                db,
+                run,
+                build_manifest(run, enriched_records),
+            ),
             step_executions_payload(db, run.run_id),
         ),
         selected_model=run.selected_model,
@@ -335,6 +341,7 @@ async def run_pipeline_for_topic(
     flow_version_id: int | None = None,
     shift_plan_id: int | None = None,
     shift_assignment_id: int | None = None,
+    reporter_persona_slug: str | None = None,
 ) -> FactoryRun:
     resolved_flow = (flow_path or "").strip() or resolve_default_flow_path(db)
     first_step = "writer"
@@ -366,6 +373,11 @@ async def run_pipeline_for_topic(
         plan = db.get(ShiftPlan, shift_plan_id)
         if plan is not None and (plan.default_model or "").strip():
             run.selected_model = plan.default_model.strip()
+
+    persona_slug = (reporter_persona_slug or "").strip() or None
+    if persona_slug:
+        run.reporter_persona_slug = persona_slug
+        run.reporter_persona_name = persona_display_name(db, persona_slug)
 
     version = resolve_flow_version_for_run(
         db,
@@ -652,6 +664,12 @@ class FactoryLoop:
                 puller_name = str(puller.get("puller_name") or "")
                 if not puller_name:
                     continue
+                persona_slug = assign_reporter_to_assignment(
+                    db,
+                    assignment=assignment,
+                    desk_slot=desk,
+                    shift_plan_id=plan.id,
+                )
                 assignment.status = "running"
                 commit_with_retry(db)
                 self._reserved_pullers.add(puller_name)
@@ -665,6 +683,7 @@ class FactoryLoop:
                         puller_name,
                         desk.flow_version_id,
                         plan.id,
+                        persona_slug,
                     ),
                 )
             if picked:
@@ -693,6 +712,7 @@ class FactoryLoop:
         puller_name: str,
         flow_version_id: int | None = None,
         shift_plan_id: int | None = None,
+        reporter_persona_slug: str | None = None,
     ) -> None:
         from article_factory.db import SessionLocal
 
@@ -708,6 +728,7 @@ class FactoryLoop:
                     flow_version_id=flow_version_id,
                     shift_plan_id=shift_plan_id,
                     shift_assignment_id=assignment_id,
+                    reporter_persona_slug=reporter_persona_slug,
                 )
             finally:
                 db.close()

@@ -76,6 +76,12 @@ def api_headers(configured_db) -> dict[str, str]:
     return {"X-API-Key": "test-factory-key"}
 
 
+def seed_active_shift_assignments(db, **kwargs):
+    from tests.shift_test_helpers import seed_active_shift_assignments as _seed
+
+    return _seed(db, **kwargs)
+
+
 def save_shift_plan_via_api(
     client: TestClient,
     api_headers: dict[str, str],

@@ -36,6 +36,14 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("first_pass_accept", "INTEGER"),
         ("shift_plan_id", "INTEGER"),
         ("shift_assignment_id", "INTEGER"),
+        ("reporter_persona_slug", "VARCHAR(64)"),
+        ("reporter_persona_name", "VARCHAR(128)"),
+    ],
+    "shift_desk_slots": [
+        ("reporter_selection_mode", "VARCHAR(32) NOT NULL DEFAULT 'round_robin'"),
+    ],
+    "shift_assignments": [
+        ("reporter_persona_slug", "VARCHAR(64)"),
     ],
     "flow_queues": [
         ("flow_version_id", "INTEGER"),
