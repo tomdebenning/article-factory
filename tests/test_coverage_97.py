@@ -1400,9 +1400,9 @@ def test_reconcile_orphaned_runs_in_flight_step(configured_db) -> None:
         )
         db.commit()
         failed = reconcile_orphaned_runs(db)
-        assert failed == 1
+        assert failed == 0
         db.refresh(run)
-        assert run.status == "failed"
+        assert run.status == "running"
     finally:
         db.close()
 

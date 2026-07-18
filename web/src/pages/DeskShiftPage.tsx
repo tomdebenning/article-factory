@@ -13,9 +13,11 @@ export default function DeskShiftPage() {
   const [order, setOrder] = useState<StandingOrderShift | null>(null);
   const [topics, setTopics] = useState<string[]>([""]);
   const [targetCount, setTargetCount] = useState("");
+  const [topicCount, setTopicCount] = useState("3");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!path || isTemplateFlowPath(path)) {
@@ -32,6 +34,30 @@ export default function DeskShiftPage() {
       })
       .catch((e: Error) => setError(e.message));
   }, [path, shiftKey]);
+
+  const generateTopics = () => {
+    const count = Number(topicCount);
+    if (!Number.isFinite(count) || count < 1 || count > 20) {
+      setError("Topic count must be between 1 and 20.");
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    setMessage(null);
+    void api
+      .generateDeskTopics({ desk_path: path, shift_key: shiftKey, count })
+      .then((result) => {
+        const nextTopics = result.topics.map((line) => line.trim()).filter(Boolean);
+        if (nextTopics.length === 0) {
+          setError(result.warning || "No topics returned.");
+          return;
+        }
+        setTopics(nextTopics);
+        setMessage(`Generated ${nextTopics.length} topics — save shift config to keep them.`);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setGenerating(false));
+  };
 
   const save = () => {
     setSaving(true);
@@ -75,15 +101,14 @@ export default function DeskShiftPage() {
       <p className="home-eyebrow">
         <Link to="/">Dashboard</Link>
         {" · "}
-        <Link to={deskDetailUrl(path)}>Desk</Link>
-        {" · Shift"}
+        <Link to={deskDetailUrl(path, { tab: "queue", shift: shiftKey })}>Desk queue</Link>
+        {" · Shift config"}
       </p>
-      <h2>
-        {deskShiftLabel(shiftKey)} shift — standing assignments
-      </h2>
+      <h2>{deskShiftLabel(shiftKey)} shift — standing assignments</h2>
       <p className="hint">
-        Recurring story angles for <code>{path}</code>. These define <strong>what</strong> to cover; pipeline prompts
-        on the desk define <strong>how</strong> each step writes.
+        Manual edit for recurring assignments and target count. To <strong>generate topics with AI</strong> and queue
+        runs, use{" "}
+        <Link to={deskDetailUrl(path, { tab: "queue", shift: shiftKey })}>Current Queue</Link> on the desk page.
       </p>
 
       <div className="desk-button-row desk-shift-tabs">
@@ -98,6 +123,30 @@ export default function DeskShiftPage() {
         ))}
       </div>
 
+      <div className="desk-topic-generate-panel">
+        <h4 className="desk-subsection-title">Generate with AI</h4>
+        <div className="desk-topic-workbench-controls">
+          <label>
+            Topic count
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={topicCount}
+              onChange={(e) => setTopicCount(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="desk-page-actions">
+          <button type="button" className="primary" disabled={generating || saving} onClick={generateTopics}>
+            {generating ? "Generating…" : "Generate topics"}
+          </button>
+          <Link to={deskDetailUrl(path, { tab: "queue", shift: shiftKey })} className="secondary">
+            Open Current Queue
+          </Link>
+        </div>
+      </div>
+
       <label>
         Target count (total assignments for this desk on this shift)
         <input
@@ -109,23 +158,21 @@ export default function DeskShiftPage() {
         />
       </label>
       <TopicListEditor
-        topics={topics}
-        onChange={setTopics}
+        topics={topics.map((line) => line.trim()).filter(Boolean)}
+        onChange={(next) => setTopics(next.length > 0 ? next : [""])}
         label="Standing assignments"
         countLabel="standing assignment"
-        emptyLabel="No standing assignments yet. Add story angles this desk should cover each shift."
+        emptyLabel="No standing assignments yet. Generate above or add manually."
       />
-      {order?.updated_at && (
-        <p className="hint">Last saved {new Date(order.updated_at).toLocaleString()}.</p>
-      )}
+      {order?.updated_at && <p className="hint">Last saved {new Date(order.updated_at).toLocaleString()}.</p>}
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
       <div className="desk-page-actions">
-        <button type="button" className="primary" disabled={saving} onClick={save}>
+        <button type="button" className="primary" disabled={saving || generating} onClick={save}>
           {saving ? "Saving…" : "Save shift config"}
         </button>
-        <Link to={deskDetailUrl(path)} className="secondary">
-          Back to desk
+        <Link to={deskDetailUrl(path, { tab: "review", shift: shiftKey })} className="secondary">
+          Back to desk review
         </Link>
       </div>
     </section>

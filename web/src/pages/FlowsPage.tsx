@@ -3,11 +3,27 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, DEFAULT_FLOW_PATH, type FlowTreeNode } from "../api";
 import { downloadFlowJson, readFlowJsonFile } from "../utils/flowFiles";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
-import { deskDetailUrl } from "../utils/desks";
+import { deskDetailUrl, isOperationalDesk, loadDeskSummaries, type DeskSummary } from "../utils/desks";
 import FlowMoveForm from "../components/FlowMoveForm";
 
 function isTemplateFlowPath(path: string): boolean {
   return path === "_templates" || path.startsWith("_templates/");
+}
+
+function filterDeskTree(node: FlowTreeNode, deskPaths: Set<string>): FlowTreeNode | null {
+  if (node.type === "file") {
+    return deskPaths.has(node.path) ? node : null;
+  }
+  if (node.path === "_templates" || node.path === "test") {
+    return null;
+  }
+  const children = (node.children || [])
+    .map((child) => filterDeskTree(child, deskPaths))
+    .filter((child): child is FlowTreeNode => child !== null);
+  if (node.path !== "" && children.length === 0) {
+    return null;
+  }
+  return { ...node, children };
 }
 
 type FlowListItem = {
@@ -119,6 +135,7 @@ function folderPathForSelection(selectedPath: string, selectedType: "folder" | "
 export default function FlowsPage() {
   const navigate = useNavigate();
   const [tree, setTree] = useState<FlowTreeNode | null>(null);
+  const [desks, setDesks] = useState<DeskSummary[]>([]);
   const [treeLoading, setTreeLoading] = useState(true);
   const [folderFlowsList, setFolderFlowsList] = useState<FlowListItem[]>([]);
   const [flowsLoading, setFlowsLoading] = useState(false);
@@ -155,11 +172,26 @@ export default function FlowsPage() {
 
   const reload = () => {
     reloadTree();
+    void loadDeskSummaries(api.getFlowTree, api.listFlows)
+      .then(setDesks)
+      .catch(() => setDesks([]));
     notifyFlowsChanged();
   };
 
+  const deskPaths = useMemo(() => new Set(desks.map((desk) => desk.path)), [desks]);
+
+  const deskTree = useMemo(() => {
+    if (!tree) {
+      return null;
+    }
+    return filterDeskTree(tree, deskPaths);
+  }, [tree, deskPaths]);
+
   useEffect(() => {
     reloadTree();
+    void loadDeskSummaries(api.getFlowTree, api.listFlows)
+      .then(setDesks)
+      .catch(() => setDesks([]));
     void api
       .getSettings()
       .then((settings) => {
@@ -184,7 +216,18 @@ export default function FlowsPage() {
     [tree, selectedPath, selectedType],
   );
 
-  const folderFlows = folderFlowsList.length > 0 ? folderFlowsList : folderFlowsFromTree;
+  const activeFolder = folderPathForSelection(selectedPath, selectedType);
+
+  const folderFlows = (folderFlowsList.length > 0 ? folderFlowsList : folderFlowsFromTree).filter((flow) =>
+    isOperationalDesk(flow),
+  );
+
+  const displayedDesks = useMemo(() => {
+    if (activeFolder) {
+      return folderFlows;
+    }
+    return desks;
+  }, [activeFolder, desks, folderFlows]);
 
   const createFolder = () => {
     const name = folderName.trim();
@@ -229,8 +272,14 @@ export default function FlowsPage() {
       .finally(() => setBusyPath(null));
   };
 
-  const deleteFlow = (path: string) => {
-    if (!window.confirm(`Delete desk ${path}?`)) return;
+  const deleteFlow = (path: string, displayName: string) => {
+    if (
+      !window.confirm(
+        `Delete desk "${displayName}"?\n\nThis removes ${path} and cannot be undone. Standing assignments for this desk are not deleted automatically.`,
+      )
+    ) {
+      return;
+    }
     setBusyPath(path);
     setError(null);
     void api
@@ -239,6 +288,7 @@ export default function FlowsPage() {
         setMessage(`Deleted ${path}`);
         if (selectedPath === path) setSelectedPath("");
         reload();
+        notifyFlowsChanged();
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusyPath(null));
@@ -298,8 +348,8 @@ export default function FlowsPage() {
         </div>
       </div>
       <p className="hint">
-        Desks define the editorial process for a beat — reporter, editor, and other steps. Each assignment
-        runs through one desk. Open a desk for coverage and assignments; edit pipeline prompts for how each step works.
+        Coverage desks define the editorial process for a beat. Reusable pipeline step libraries live on the{" "}
+        <Link to="/templates">Templates</Link> page — they are not desks.
       </p>
       <div className="flow-default-banner">
         <span>Default desk:</span>
@@ -314,10 +364,10 @@ export default function FlowsPage() {
         <aside className="flow-tree-panel">
           <h3>Browse</h3>
           {treeLoading && !tree && <p className="hint">Loading folders…</p>}
-          {tree && (
+          {deskTree && (
             <div className="flow-tree">
               <TreeBranch
-                node={tree}
+                node={deskTree}
                 selectedPath={selectedPath}
                 onSelect={(path, type) => {
                   setSelectedPath(path);
@@ -349,19 +399,16 @@ export default function FlowsPage() {
 
         <div className="flow-tree-detail">
           <h3>{selectedType === "file" && selectedPath ? selectedPath : selectedPath || "All desks"}</h3>
-          {selectedType === "folder" && selectedPath === "_templates" && (
-            <p className="hint flow-template-note">
-              Templates in <code>_templates</code> are starting points only. Move one into a regular folder to use it on{" "}
-              <Link to="/start-flows">Plan a shift</Link>.
+          {flowsLoading && displayedDesks.length === 0 && <p className="hint">Loading desks…</p>}
+          {!flowsLoading && displayedDesks.length === 0 && (
+            <p className="hint">
+              No coverage desks here yet. <Link to="/flows/new">Create one</Link> or browse{" "}
+              <Link to="/templates">pipeline templates</Link>.
             </p>
           )}
-          {flowsLoading && folderFlows.length === 0 && <p className="hint">Loading desks…</p>}
-          {!flowsLoading && folderFlows.length === 0 && (
-            <p className="hint">No desks here yet. <Link to="/flows/new">Create one</Link>.</p>
-          )}
-          {folderFlows.length > 0 && (
+          {displayedDesks.length > 0 && (
             <ul className="flow-file-list">
-              {folderFlows.map((flow) => (
+              {displayedDesks.map((flow) => (
                 <li key={flow.path} className="flow-file-list-item">
                   <div className="flow-file-list-main">
                     <Link to={deskDetailUrl(flow.path)}>
@@ -416,7 +463,7 @@ export default function FlowsPage() {
                       type="button"
                       className="secondary run-delete-button"
                       disabled={busyPath === flow.path}
-                      onClick={() => deleteFlow(flow.path)}
+                      onClick={() => deleteFlow(flow.path, flow.display_name)}
                     >
                       Delete
                     </button>

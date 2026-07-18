@@ -154,6 +154,7 @@ class FactoryRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     topic_slug: Mapped[str] = mapped_column(String(64), index=True)
+    topic_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     flow_path: Mapped[str] = mapped_column(String(256), default="sports/standard-4-step.flow.json")
     queue_item_id: Mapped[int | None] = mapped_column(ForeignKey("topic_queue.id"), nullable=True)
     shift_plan_id: Mapped[int | None] = mapped_column(ForeignKey("shift_plans.id"), nullable=True, index=True)

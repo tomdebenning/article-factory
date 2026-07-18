@@ -6,7 +6,30 @@ from article_factory.services.cms_connection import check_cms_connection
 
 
 @pytest.mark.asyncio
-async def test_check_cms_connection_not_configured() -> None:
+async def test_check_cms_connection_falls_back_to_https(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_probe(base: str, cms_api_key: str) -> tuple[bool, str]:
+        calls.append(base)
+        if base.startswith("https://"):
+            return True, f"Connected to Showroom CMS at {base}"
+        return False, "Showroom CMS unreachable: Empty reply from server"
+
+    monkeypatch.setattr("article_factory.services.cms_connection._probe_cms", fake_probe)
+
+    ok, message = await check_cms_connection("http://127.0.0.1:8200", "secret")
+    assert ok is True
+    assert "https://127.0.0.1:8200" in message
+    assert calls == ["http://127.0.0.1:8200", "https://127.0.0.1:8200"]
+
+
+@pytest.mark.asyncio
+async def test_alternate_local_cms_url() -> None:
+    from article_factory.services.cms_connection import alternate_local_cms_url
+
+    assert alternate_local_cms_url("http://127.0.0.1:8200") == "https://127.0.0.1:8200"
+    assert alternate_local_cms_url("https://localhost:8200") == "http://localhost:8200"
+    assert alternate_local_cms_url("http://sg02:8200") is None
     ok, message = await check_cms_connection("", "")
     assert ok is False
     assert "Not configured" in message

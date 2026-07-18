@@ -385,9 +385,32 @@ def manifest_step_tools_backfilled(
     return False
 
 
+_IN_FLIGHT_STEP_STATUSES = frozenset({"pending", "submitted", "waiting", "pulled"})
+
+
+def collapse_superseded_in_flight_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop in-flight rows superseded by a newer attempt for the same step_key."""
+    latest_index_by_key: dict[str, int] = {}
+    for index, step in enumerate(steps):
+        latest_index_by_key[str(step.get("step_key") or "")] = index
+
+    collapsed: list[dict[str, Any]] = []
+    for index, step in enumerate(steps):
+        status = str(step.get("status") or "")
+        step_key = str(step.get("step_key") or "")
+        if status in _IN_FLIGHT_STEP_STATUSES and latest_index_by_key.get(step_key) != index:
+            continue
+        collapsed.append(step)
+    return collapsed
+
+
 def step_executions_payload(db: Session, run_id: str) -> list[dict]:
     steps = [step_execution_to_dict(s) for s in list_step_executions(db, run_id)]
     return enrich_steps_with_responses(db, run_id, steps)
+
+
+def step_executions_display_payload(db: Session, run_id: str) -> list[dict]:
+    return collapse_superseded_in_flight_steps(step_executions_payload(db, run_id))
 
 
 def batch_step_executions_payload(db: Session, run_ids: list[str]) -> dict[str, list[dict]]:

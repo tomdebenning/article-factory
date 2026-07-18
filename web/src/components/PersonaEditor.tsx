@@ -83,12 +83,12 @@ export default function PersonaEditor({ initial, editingSlug, deskPath, onSaved,
         />
       </label>
       <label>
-        Writing voice
+        Writing voice (staff persona)
         <textarea
           rows={8}
           value={draft.style_prompt}
           disabled={busy}
-          placeholder="How this reporter writes — tone, rhythm, audience, and style constraints."
+          placeholder="How this reporter writes — tone, rhythm, audience, and style. Injected into the writer step when they are assigned on a desk."
           onChange={(e) => setDraft({ ...draft, style_prompt: e.target.value })}
         />
       </label>

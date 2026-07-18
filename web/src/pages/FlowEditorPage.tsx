@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type FlowDefinition, type FlowStep } from "../api";
 import FlowMoveForm from "../components/FlowMoveForm";
 import { downloadFlowJson } from "../utils/flowFiles";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
+import { deskDetailUrl } from "../utils/desks";
+import { flowIsDesk } from "../utils/pipelineTemplates";
 
 function isTemplateFlowPath(path: string): boolean {
   return path === "_templates" || path.startsWith("_templates/");
@@ -44,6 +46,8 @@ function normalizeLastStepCompletion(steps: FlowStep[]): FlowStep[] {
 
 export default function FlowEditorPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTemplateEditor = location.pathname.startsWith("/templates/");
   const [searchParams] = useSearchParams();
   const path = searchParams.get("path") || "";
   const stepKey = searchParams.get("step") || "";
@@ -93,6 +97,16 @@ export default function FlowEditorPage() {
 
   const steps = useMemo(() => (flow ? [...flow.steps].sort((a, b) => a.order - b.order) : []), [flow]);
   const earlierSteps = (index: number) => steps.slice(0, index);
+  const overviewHref = useMemo(() => {
+    if (!path || !flow) {
+      return isTemplateEditor ? "/templates" : "/";
+    }
+    if (isTemplateEditor || !flowIsDesk(flow)) {
+      return "/templates";
+    }
+    return deskDetailUrl(path);
+  }, [flow, isTemplateEditor, path]);
+  const overviewLabel = isTemplateEditor || (flow && !flowIsDesk(flow)) ? "Pipeline templates" : "Desk overview";
 
   const updateStep = (stepId: string, patch: Partial<FlowStep>) => {
     if (!flow || readOnlyVersion) return;
@@ -180,7 +194,7 @@ export default function FlowEditorPage() {
   return (
     <section className="card flow-editor">
       <div className="flow-editor-head">
-        <p><Link to={`/desks?path=${encodeURIComponent(path)}`}>← Desk overview</Link></p>
+        <p><Link to={overviewHref}>← {overviewLabel}</Link></p>
         <div className="flow-editor-head-actions">
           <Link
             to={`/flows/performance?path=${encodeURIComponent(path)}`}
@@ -204,8 +218,17 @@ export default function FlowEditorPage() {
       </div>
       <h2>{flow.display_name}</h2>
       <p className="hint">
-        Pipeline prompts define <strong>how</strong> each step writes and reviews work. Beat brief, Edition topic, and
-        assignments live on the <Link to={`/desks?path=${encodeURIComponent(path)}`}>desk overview</Link>.
+        {isTemplateEditor || (flow && !flowIsDesk(flow)) ? (
+          <>
+            Pipeline template — steps and prompts only. Apply this template to a desk from the desk page, or save
+            versions from <Link to={`/flows/performance?path=${encodeURIComponent(path)}`}>Performance</Link>.
+          </>
+        ) : (
+          <>
+            Pipeline prompts define <strong>how</strong> each step writes and reviews work. Beat brief, Edition topic,
+            and assignments live on the <Link to={deskDetailUrl(path)}>desk overview</Link>.
+          </>
+        )}
       </p>
       {readOnlyVersion && versionId && (
         <div className="flow-template-banner">
@@ -236,7 +259,7 @@ export default function FlowEditorPage() {
         </div>
       )}
       <p className="hint">
-        <Link to={`/desks?path=${encodeURIComponent(path)}`}>← Desk overview</Link>
+        <Link to={overviewHref}>← {overviewLabel}</Link>
         {" · "}
         <code>{path}</code> · Templates: {"{{topic}}"}, {"{{feedback}}"}, {"{{step_key}}"} (e.g. {"{{writer}}"}).
         Review steps should end with <code>VERDICT: ACCEPT</code> or <code>VERDICT: REJECT</code>.

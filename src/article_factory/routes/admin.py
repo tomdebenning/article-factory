@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 from article_factory.services.api_key_auth import require_configured_api_key
 from article_factory.control_plane.client import ControlPlaneClient
 from article_factory.db import get_db
-from article_factory.models import CompletedArticle, FactoryRun, FlowQueue, StepExecution, TopicQueueItem
+from article_factory.models import CompletedArticle, FactoryRun, FlowQueue, ShiftAssignment, StepExecution, TopicQueueItem
 from article_factory.services.flow_switch import stop_all_runs, switch_active_flow
 from article_factory.services.flow_paths import resolve_default_flow_path
 from article_factory.services.flow_queues import ensure_default_flow_queue, list_flow_queues, resolve_queue_flow_path
+from article_factory.services.factory_queue_depth import factory_queue_depth
 from article_factory.services.flow_storage import ensure_default_flows
 from article_factory.orchestrator.runner import factory_loop, run_pipeline_for_topic
 from article_factory.services.showroom_publish import publish_article_to_showroom
@@ -343,11 +344,15 @@ async def factory_status(db: Session = Depends(get_db)) -> dict:
     active = active_runs[0] if active_runs else None
 
     def _run_summary(run: FactoryRun) -> dict:
-        active_prompt: str | None = None
+        active_prompt: str | None = (run.topic_prompt or "").strip() or None
         if run.queue_item_id:
             item = db.get(TopicQueueItem, run.queue_item_id)
             if item:
                 active_prompt = item.prompt
+        if not active_prompt and run.shift_assignment_id:
+            assignment = db.get(ShiftAssignment, run.shift_assignment_id)
+            if assignment and assignment.prompt.strip():
+                active_prompt = assignment.prompt
         from article_factory.services.flow_steps import flow_steps_payload_for_run
 
         summary = RunSummary.model_validate(run).model_dump()
@@ -384,7 +389,7 @@ async def factory_status(db: Session = Depends(get_db)) -> dict:
         "default_model": runtime.default_model,
         "default_puller": runtime.default_puller,
         "control_plane_url": runtime.control_plane_url,
-        "queue_depth": queued,
+        "queue_depth": factory_queue_depth(db),
         "queue_counts": queue_counts,
         "readiness": readiness,
         "onboarding": morning_shift_onboarding(db, setup_complete=readiness["setup_complete"]),

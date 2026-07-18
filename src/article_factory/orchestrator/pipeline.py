@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from article_factory.models import FactoryRun, TopicQueueItem
+from article_factory.models import FactoryRun, ShiftAssignment, TopicQueueItem
 from article_factory.services.tool_usage import aggregate_tool_use_by_step
 from article_factory.services.flow_storage import read_flow
 from article_factory.services.iteration_stats import attach_iteration_metadata
@@ -95,13 +95,17 @@ async def push_factory_status(
 
 def serialize_active_run(db: Session, run: FactoryRun) -> dict[str, Any]:
     from article_factory.services.flow_steps import flow_steps_payload
-    from article_factory.services.step_trace import step_executions_payload
+    from article_factory.services.step_trace import step_executions_display_payload
 
-    topic_prompt: str | None = None
+    topic_prompt: str | None = (run.topic_prompt or "").strip() or None
     if run.queue_item_id:
         item = db.get(TopicQueueItem, run.queue_item_id)
         if item and item.prompt.strip():
             topic_prompt = item.prompt
+    if not topic_prompt and run.shift_assignment_id:
+        assignment = db.get(ShiftAssignment, run.shift_assignment_id)
+        if assignment and assignment.prompt.strip():
+            topic_prompt = assignment.prompt
 
     steps: list[dict[str, Any]] = []
     try:
@@ -116,7 +120,7 @@ def serialize_active_run(db: Session, run: FactoryRun) -> dict[str, Any]:
                 "puller": step.get("puller") or "",
                 "model": step.get("model") or "",
             }
-            for step in step_executions_payload(db, run.run_id)
+            for step in step_executions_display_payload(db, run.run_id)
         ]
     except Exception:
         if run.current_step:

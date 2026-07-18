@@ -9,6 +9,7 @@ type Props = {
   label?: string;
   hint?: string;
   staffingMode?: boolean;
+  hidePullers?: boolean;
 };
 
 export default function ModelSelectFields({
@@ -17,6 +18,7 @@ export default function ModelSelectFields({
   label = "Model",
   hint = "Puller is assigned automatically from active pullers when each topic starts.",
   staffingMode = false,
+  hidePullers = false,
 }: Props) {
   const [pullers, setPullers] = useState<PullerInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export default function ModelSelectFields({
         )}
       </label>
       <p className="hint">{fieldHint}</p>
-      {staffingMode && pullers.length > 0 && (
+      {!hidePullers && staffingMode && pullers.length > 0 && (
         <div className="staffing-groups" aria-label="Staffing">
           {local.length > 0 && (
             <div className="staffing-group">
@@ -83,23 +85,23 @@ export default function ModelSelectFields({
           )}
         </div>
       )}
-      {!staffingMode && pullers.length > 0 && (
+      {!hidePullers && !staffingMode && pullers.length > 0 && (
         <div className="puller-status-grid" aria-label="Control plane pullers">
           {[...pullers]
             .sort((a, b) => a.puller_name.localeCompare(b.puller_name))
             .map((puller) => pullerCard(puller))}
         </div>
       )}
-      {activeCount > 0 && (
+      {!hidePullers && activeCount > 0 && (
         <p className="hint">{activeCount} active puller(s) on the control plane.</p>
       )}
-      {pullers.length > 0 && activeCount === 0 && (
+      {!hidePullers && pullers.length > 0 && activeCount === 0 && (
         <p className="error">No active pullers on the control plane right now.</p>
       )}
-      {model && modelOptions.length > 0 && activeCount === 0 && (
+      {!hidePullers && model && modelOptions.length > 0 && activeCount === 0 && (
         <p className="error">No active pullers available for the selected model.</p>
       )}
-      {model && !modelOptions.includes(model) && modelOptions.length > 0 && (
+      {!hidePullers && model && !modelOptions.includes(model) && modelOptions.length > 0 && (
         <p className="error">“{model}” is not available on any active puller.</p>
       )}
     </div>

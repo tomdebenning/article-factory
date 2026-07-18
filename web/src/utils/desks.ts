@@ -1,4 +1,4 @@
-import type { FlowTreeNode } from "../api";
+import { api, type FlowTreeNode } from "../api";
 
 export type DeskSummary = {
   path: string;
@@ -10,17 +10,40 @@ export type DeskSummary = {
   modified_at?: string;
 };
 
-const PIPELINE_ONLY_SLUGS = new Set(["standard-4-step", "single-writer", "writer-review", "new-desk"]);
-
 export function isTemplateFlowPath(path: string): boolean {
   return path === "_templates" || path.startsWith("_templates/");
 }
 
-export function isCoverageDesk(desk: DeskSummary): boolean {
-  if (desk.beat_brief?.trim() || desk.edition_topic_slug?.trim()) {
+export function isCoverageDesk(
+  desk: Pick<DeskSummary, "beat_brief" | "edition_topic_slug">,
+): boolean {
+  return Boolean(desk.beat_brief?.trim() || desk.edition_topic_slug?.trim());
+}
+
+/** Coverage desks outside the template library (_templates/). */
+export function isOperationalDesk(
+  entry: Pick<DeskSummary, "path" | "beat_brief" | "edition_topic_slug">,
+): boolean {
+  if (isTemplateFlowPath(entry.path)) {
+    return false;
+  }
+  return isCoverageDesk(entry);
+}
+
+/** Pipeline templates: library files or flows without operational desk metadata. */
+export function isPipelineTemplateSummary(
+  entry: Pick<DeskSummary, "path" | "beat_brief" | "edition_topic_slug">,
+): boolean {
+  if (entry.path.startsWith("test/")) {
+    return false;
+  }
+  if (isOperationalDesk(entry)) {
+    return false;
+  }
+  if (isTemplateFlowPath(entry.path)) {
     return true;
   }
-  return !PIPELINE_ONLY_SLUGS.has(desk.slug);
+  return !isCoverageDesk(entry);
 }
 
 export function deskCoverageTitle(desk: DeskSummary): string {
@@ -71,8 +94,18 @@ export function collectDeskPaths(node: FlowTreeNode): string[] {
   return paths;
 }
 
-export function deskDetailUrl(path: string): string {
-  return `/desks?path=${encodeURIComponent(path)}`;
+export function deskDetailUrl(
+  path: string,
+  options?: { tab?: "config" | "queue" | "review"; shift?: string },
+): string {
+  const params = new URLSearchParams({ path });
+  if (options?.tab) {
+    params.set("tab", options.tab);
+  }
+  if (options?.shift) {
+    params.set("shift", options.shift);
+  }
+  return `/desks?${params.toString()}`;
 }
 
 export function deskShiftUrl(path: string, shiftKey: string): string {
@@ -86,6 +119,13 @@ export function deskFlowEditUrl(path: string, stepKey?: string): string {
 
 export function personaDetailUrl(slug: string): string {
   return `/personas/${encodeURIComponent(slug)}`;
+}
+
+export async function addStaffPersonaToDesk(deskPath: string, personaSlug: string): Promise<void> {
+  const { flow } = await api.getFlow(deskPath);
+  const pool = new Set(flow.reporter_pool || []);
+  pool.add(personaSlug);
+  await api.saveFlow(deskPath, { ...flow, reporter_pool: [...pool] });
 }
 
 export async function loadDeskSummaries(
@@ -131,6 +171,6 @@ export async function loadDeskSummaries(
   }
 
   return summaries
-    .filter(isCoverageDesk)
+    .filter(isOperationalDesk)
     .sort((a, b) => deskCoverageTitle(a).localeCompare(deskCoverageTitle(b)));
 }

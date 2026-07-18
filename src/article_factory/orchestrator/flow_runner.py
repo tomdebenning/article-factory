@@ -19,6 +19,7 @@ from article_factory.services.run_control import (
     clear_run_cancel,
     ensure_run_active,
     fail_in_flight_steps,
+    fail_superseded_in_flight_steps,
     is_run_cancelled,
     mark_run_cancelled_in_db,
     request_run_cancel,
@@ -145,6 +146,7 @@ async def execute_flow_pipeline(
                     system_prompt = merge_persona_style_prompt(system_prompt, persona.style_prompt)
             if is_review_loop_step(step):
                 system_prompt = f"{system_prompt.rstrip()}{review_json_prompt_instructions()}"
+            fail_superseded_in_flight_steps(db, run.run_id, step.step_key)
             ctx = StepContext(
                 step_key=step.step_key,
                 label=step.label,

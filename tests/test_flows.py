@@ -64,6 +64,36 @@ def test_flow_templates(client, api_headers) -> None:
     assert created.json()["flow"]["display_name"] == "My single writer"
 
 
+def test_apply_pipeline_template_api(client, api_headers) -> None:
+    created = client.post(
+        "/api/flows/desks/create",
+        headers=api_headers,
+        json={
+            "folder": "desk-setup",
+            "slug": "blank-desk",
+            "display_name": "Blank Desk",
+            "beat_brief": "Test beat coverage.",
+            "edition_topic_slug": "general",
+        },
+    )
+    assert created.status_code == 200
+    desk_path = created.json()["path"]
+
+    templates = client.get("/api/flows/pipeline-templates", headers=api_headers).json()["templates"]
+    template_path = next(item["path"] for item in templates if item["slug"] == "standard-4-step")
+
+    applied = client.post(
+        "/api/flows/apply-template",
+        headers=api_headers,
+        json={"path": desk_path, "template_path": template_path},
+    )
+    assert applied.status_code == 200
+    flow = applied.json()["flow"]
+    assert flow["display_name"] == "Blank Desk"
+    assert len(flow["steps"]) == 4
+    assert flow["steps"][0]["step_key"] == "writer"
+
+
 def test_flow_import_export(client, api_headers) -> None:
     exported = client.get(
         "/api/flows/export",

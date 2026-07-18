@@ -207,6 +207,7 @@ def _run_summary(run: FactoryRun, db: Session | None = None, manual_tags: dict[s
     payload: dict[str, Any] = {
         "run_id": run.run_id,
         "topic_slug": run.topic_slug,
+        "topic_prompt": (run.topic_prompt or "").strip() or None,
         "status": run.status,
         "flow_version_id": run.flow_version_id,
         "topic_queue_snapshot_id": run.topic_queue_snapshot_id,

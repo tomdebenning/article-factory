@@ -44,7 +44,7 @@ def enriched_run_summary(db: Session, run: FactoryRun, *, include_steps: bool = 
     summary["started_at"] = run.started_at.isoformat() if run.started_at else None
     summary["finished_at"] = run.finished_at.isoformat() if run.finished_at else None
     summary["topic_prompt"] = (
-        assignment.prompt if assignment else (item.prompt if item else None)
+        assignment.prompt if assignment else (item.prompt if item else (run.topic_prompt or None))
     )
     summary["flow_queue_id"] = flow_queue_id
     summary["flow_queue_name"] = queue_name or "Unassigned"

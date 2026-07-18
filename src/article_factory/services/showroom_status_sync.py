@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session
 from article_factory.cms_client import CmsClient
 from article_factory.config import settings
 from article_factory.control_plane.client import ControlPlaneClient
-from article_factory.models import FactoryRun, ShiftAssignment, TopicQueueItem
+from article_factory.models import FactoryRun
 from article_factory.orchestrator.pipeline import push_factory_status
+from article_factory.services.cms_connection import resolve_cms_url
+from article_factory.services.factory_queue_depth import factory_queue_depth
 from article_factory.services.factory_identity import load_factory_identity
 from article_factory.services.newsroom_alerts import alerts_payload
 from article_factory.services.runtime_settings import RuntimeSettings, load_runtime_settings
@@ -58,7 +60,7 @@ async def _pullers_system_meta(db: Session) -> dict[str, Any] | None:
 
 async def push_showroom_factory_status(db: Session, cms: CmsClient) -> None:
     running = _active_runs(db)
-    queue_depth = db.query(ShiftAssignment).filter_by(status="pending").count()
+    queue_depth = factory_queue_depth(db)
     system_meta = await _pullers_system_meta(db)
     runtime = load_runtime_settings(db)
     if system_meta is None:
@@ -98,7 +100,8 @@ async def refresh_showroom_status(*, max_attempts: int = 4) -> bool:
                 runtime = load_runtime_settings(db)
                 if not _cms_configured(runtime):
                     return False
-                cms = CmsClient(base_url=runtime.cms_url, api_key=runtime.cms_api_key)
+                cms_url = await resolve_cms_url(db, persist=True)
+                cms = CmsClient(base_url=cms_url, api_key=runtime.cms_api_key)
                 await push_showroom_factory_status(db, cms)
                 _last_push_at = time.monotonic()
                 return True
@@ -149,7 +152,8 @@ async def showroom_status_tick(db: Session) -> None:
     if not _cms_configured(runtime):
         return
 
-    cms = CmsClient(base_url=runtime.cms_url, api_key=runtime.cms_api_key)
+    cms_url = await resolve_cms_url(db, persist=True)
+    cms = CmsClient(base_url=cms_url, api_key=runtime.cms_api_key)
     try:
         await push_showroom_factory_status(db, cms)
         global _last_push_at

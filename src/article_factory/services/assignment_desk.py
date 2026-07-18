@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -182,6 +183,53 @@ def ai_gap_for_desk(db: Session, *, slot: ShiftDeskSlot, standing: StandingOrder
     return max(0, target - filled)
 
 
+def _parse_assignment_line(item: Any) -> str:
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        for key in ("prompt", "topic", "title", "assignment", "text", "description", "headline"):
+            value = item.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+    if item is None:
+        return ""
+    return str(item).strip()
+
+
+def _assignment_items_from_payload(payload: dict[str, Any]) -> list[Any]:
+    for key in ("assignments", "topics", "prompts", "story_angles", "suggestions", "items"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            return [line.strip() for line in value.splitlines() if line.strip()]
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _prompts_from_llm_response(*, payload: dict[str, Any], raw: str, count: int) -> list[str]:
+    prompts: list[str] = []
+    for item in _assignment_items_from_payload(payload):
+        line = _parse_assignment_line(item)
+        if line and line not in prompts:
+            prompts.append(line)
+        if len(prompts) >= count:
+            return prompts[:count]
+
+    for line in raw.splitlines():
+        cleaned = re.sub(r"^[\s\d\.\)\-*]+", "", line.strip())
+        if len(cleaned) < 12:
+            continue
+        if cleaned.startswith(("{", "[", "```")):
+            continue
+        if cleaned not in prompts:
+            prompts.append(cleaned)
+        if len(prompts) >= count:
+            break
+    return prompts[:count]
+
+
 def _build_suggestion_messages(
     *,
     desk_name: str,
@@ -203,6 +251,71 @@ def _build_suggestion_messages(
         f"Propose exactly {count} distinct assignment prompt(s). Each should be a specific, actionable story angle."
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+async def suggest_topics_for_desk(
+    db: Session,
+    *,
+    desk_path: str,
+    shift_key: str,
+    count: int,
+    cp: ControlPlaneClient,
+    puller: str,
+    model: str | None = None,
+) -> list[str]:
+    """Propose story assignment prompts for a desk without requiring a shift plan."""
+    if count <= 0:
+        return []
+
+    runtime = load_runtime_settings(db)
+    resolved_model = (model or runtime.default_model or "").strip()
+    if not resolved_model:
+        raise ValueError("No model configured — set a default model in Settings")
+
+    cleaned_path = desk_path.strip()
+    cleaned_key = shift_key.strip().lower()
+    desk_name = cleaned_path
+    try:
+        from article_factory.services.flow_storage import read_flow
+
+        flow = read_flow(cleaned_path)
+        desk_name = flow.display_name or cleaned_path
+    except Exception:
+        pass
+
+    beat = load_desk_brief(db, desk_path=cleaned_path, flow_version_id=None)
+    messages = _build_suggestion_messages(
+        desk_name=desk_name,
+        desk_path=cleaned_path,
+        beat_brief=beat,
+        shift_key=cleaned_key,
+        count=count,
+    )
+    try:
+        raw = await run_control_plane_completion(
+            cp=cp,
+            puller=puller,
+            model=resolved_model,
+            messages=messages,
+            agent_id="factory-assignment-desk",
+        )
+    except RuntimeError as exc:
+        logger.warning("Desk topic suggestion failed for %s: %s", cleaned_path, exc)
+        return []
+
+    try:
+        payload = extract_json_object(raw)
+    except (json.JSONDecodeError, ValueError):
+        payload = {}
+
+    prompts = _prompts_from_llm_response(payload=payload, raw=raw, count=count)
+    if not prompts:
+        logger.warning(
+            "Desk topic suggestion for %s returned no prompts. Raw response: %s",
+            cleaned_path,
+            raw[:500],
+        )
+    return prompts
 
 
 async def suggest_ai_assignments_for_desk(
@@ -241,19 +354,23 @@ async def suggest_ai_assignments_for_desk(
             messages=messages,
             agent_id="factory-assignment-desk",
         )
-        payload = extract_json_object(raw)
-    except (json.JSONDecodeError, ValueError, RuntimeError) as exc:
+    except RuntimeError as exc:
         logger.warning("AI assignment suggestion failed for desk slot %s: %s", slot.id, exc)
         return []
 
-    prompts: list[str] = []
-    for item in payload.get("assignments") or []:
-        line = str(item).strip()
-        if line:
-            prompts.append(line)
-        if len(prompts) >= count:
-            break
-    return prompts[:count]
+    try:
+        payload = extract_json_object(raw)
+    except (json.JSONDecodeError, ValueError):
+        payload = {}
+
+    prompts = _prompts_from_llm_response(payload=payload, raw=raw, count=count)
+    if not prompts:
+        logger.warning(
+            "AI assignment suggestion for desk slot %s returned no prompts. Raw response: %s",
+            slot.id,
+            raw[:500],
+        )
+    return prompts
 
 
 def add_ai_suggestions(db: Session, *, slot: ShiftDeskSlot, prompts: list[str]) -> int:

@@ -685,6 +685,7 @@ export type ErrorGroupOption = {
 export type FlowPerformanceRun = {
   run_id: string;
   topic_slug: string;
+  topic_prompt?: string | null;
   status: string;
   flow_version_id?: number | null;
   topic_queue_snapshot_id?: number | null;
@@ -1032,6 +1033,27 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  createDesk: (body: {
+    folder: string;
+    slug: string;
+    display_name: string;
+    beat_brief?: string;
+    edition_topic_slug?: string;
+  }) =>
+    request<{ path: string; flow: FlowDefinition }>("/api/flows/desks/create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  createPipelineTemplate: (body: {
+    folder: string;
+    slug: string;
+    display_name: string;
+    step_count: number;
+  }) =>
+    request<{ path: string; flow: FlowDefinition }>("/api/flows/pipeline-templates/create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   createFlowFolder: (path: string) =>
     request<{ path: string }>("/api/flows/folders", {
       method: "POST",
@@ -1056,6 +1078,15 @@ export const api = {
   deleteFlowFolder: (path: string) =>
     request<{ ok: boolean }>(`/api/flows/folders?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
   listFlowTemplates: () => request<{ templates: FlowTemplate[] }>("/api/flows/templates"),
+  listPipelineTemplates: () =>
+    request<{
+      templates: Array<
+        FlowTemplate & {
+          version_count?: number;
+          latest_version?: { id: number; version_number: number; message?: string | null };
+        }
+      >;
+    }>("/api/flows/pipeline-templates"),
   createFlowFromTemplate: (body: {
     template_path: string;
     folder: string;
@@ -1063,6 +1094,11 @@ export const api = {
     display_name: string;
   }) =>
     request<{ path: string; flow: FlowDefinition }>("/api/flows/from-template", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  applyPipelineTemplate: (body: { path: string; template_path: string; version_id?: number }) =>
+    request<{ path: string; flow: FlowDefinition }>("/api/flows/apply-template", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -1276,6 +1312,28 @@ export const api = {
   }) =>
     request<{ order: StandingOrderShift }>("/api/standing-orders", {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  generateDeskTopics: (body: { desk_path: string; shift_key: string; count: number }) =>
+    request<{ desk_path: string; shift_key: string; topics: string[]; warning?: string }>(
+      "/api/desks/generate-topics",
+      {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  saveDeskTopics: (body: { desk_path: string; shift_key: string; topics: string[]; merge?: boolean }) =>
+    request<{ order: StandingOrderShift }>("/api/desks/save-topics", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  startDeskTestRun: (body: {
+    desk_path: string;
+    prompt: string;
+    topic_slug?: string;
+    reporter_persona_slug?: string;
+  }) =>
+    request<{ run: RunSummary }>("/api/desks/test-run", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   getPersona: (slug: string) => request<{ persona: Persona }>(`/api/personas/${encodeURIComponent(slug)}`),

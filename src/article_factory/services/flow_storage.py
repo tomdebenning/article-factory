@@ -9,6 +9,7 @@ from typing import Any
 from article_factory.config import settings
 from article_factory.services.flow_schema import (
     FlowDefinition,
+    FlowStep,
     flow_from_dict,
     flow_to_dict,
     new_flow_definition,
@@ -147,8 +148,21 @@ def duplicate_flow(rel_path: str, *, slug: str | None = None, display_name: str 
     if target.exists():
         raise FileExistsError(rel)
 
+    steps, article_step_id = _remap_flow_steps(flow)
+    duplicated = FlowDefinition(
+        slug=new_slug,
+        display_name=new_name,
+        max_iterations=flow.max_iterations,
+        article_step_id=article_step_id,
+        steps=steps,
+    )
+    write_flow(rel, duplicated)
+    return rel, duplicated
+
+
+def _remap_flow_steps(source_flow: FlowDefinition) -> tuple[list[FlowStep], str | None]:
     steps = []
-    old_steps = sorted(flow.steps, key=lambda item: item.order)
+    old_steps = sorted(source_flow.steps, key=lambda item: item.order)
     id_map: dict[str, str] = {}
     for step in old_steps:
         copied = step.model_copy(deep=True)
@@ -166,21 +180,58 @@ def duplicate_flow(rel_path: str, *, slug: str | None = None, display_name: str 
                 step.completion.loop_goto_step_id,
             )
 
-    article_step_id = id_map.get(flow.article_step_id or "", flow.article_step_id)
-    duplicated = FlowDefinition(
-        slug=new_slug,
-        display_name=new_name,
-        max_iterations=flow.max_iterations,
-        article_step_id=article_step_id,
-        steps=steps,
-    )
-    write_flow(rel, duplicated)
-    return rel, duplicated
+    article_step_id = id_map.get(source_flow.article_step_id or "", source_flow.article_step_id)
+    return steps, article_step_id
 
 
 def is_template_path(rel_path: str) -> bool:
     normalized = rel_path.strip().replace("\\", "/").lstrip("/")
     return normalized == TEMPLATES_FOLDER or normalized.startswith(f"{TEMPLATES_FOLDER}/")
+
+
+def _catalog_entry_is_desk(entry: dict[str, Any]) -> bool:
+    return bool(str(entry.get("beat_brief") or "").strip() or str(entry.get("edition_topic_slug") or "").strip())
+
+
+def _catalog_entry_is_operational_desk(entry: dict[str, Any]) -> bool:
+    path = str(entry.get("path") or "")
+    if not path or is_template_path(path):
+        return False
+    return _catalog_entry_is_desk(entry)
+
+
+def _catalog_entry_is_pipeline_template(entry: dict[str, Any]) -> bool:
+    path = str(entry.get("path") or "")
+    if not path or path.startswith("test/"):
+        return False
+    if _catalog_entry_is_operational_desk(entry):
+        return False
+    if is_template_path(path):
+        return True
+    return not _catalog_entry_is_desk(entry)
+
+
+def list_desks() -> list[dict[str, Any]]:
+    desks = [entry for entry in list_folder_flows("") if _catalog_entry_is_operational_desk(entry)]
+    return sorted(desks, key=lambda item: (str(item.get("display_name") or "").lower(), item.get("path") or ""))
+
+
+def list_pipeline_templates() -> list[dict[str, Any]]:
+    templates = [entry for entry in list_folder_flows("") if _catalog_entry_is_pipeline_template(entry)]
+    return sorted(templates, key=lambda item: (str(item.get("display_name") or "").lower(), item.get("path") or ""))
+
+
+def _assert_desk_flow(flow: FlowDefinition) -> None:
+    if not flow.beat_brief.strip() and not flow.edition_topic_slug.strip():
+        raise ValueError("Target is not a desk — set beat brief or Edition topic on the desk first")
+
+
+def _resolve_pipeline_template(path: str) -> FlowDefinition:
+    normalized = normalize_flow_rel_path(path)
+    entry = _flow_catalog_entry({"path": normalized})
+    if entry is None or not _catalog_entry_is_pipeline_template(entry):
+        raise ValueError("Path is not a pipeline template")
+    return read_flow(normalized)
 
 
 def move_flow(
@@ -298,6 +349,55 @@ def create_flow(*, folder: str, slug: str, display_name: str, step_count: int) -
     return rel, flow
 
 
+def create_desk(
+    *,
+    folder: str,
+    slug: str,
+    display_name: str,
+    beat_brief: str = "",
+    edition_topic_slug: str = "",
+) -> tuple[str, FlowDefinition]:
+    brief = beat_brief.strip()
+    topic = edition_topic_slug.strip()
+    if not brief and not topic:
+        raise ValueError("Desk requires a beat brief or Edition topic")
+    flow = new_flow_definition(slug=slug, display_name=display_name, step_count=1)
+    placeholder = flow.steps[0].model_copy(
+        update={
+            "label": "Placeholder",
+            "system_prompt": "Pipeline not configured yet. Apply a pipeline template from the desk page.",
+            "user_prompt_template": "{{topic}}",
+        }
+    )
+    flow = flow.model_copy(
+        update={
+            "beat_brief": brief,
+            "edition_topic_slug": topic,
+            "steps": [placeholder],
+        }
+    )
+    rel = normalize_flow_rel_path(f"{folder.strip('/')}/{slug}" if folder.strip("/") else slug)
+    target = _resolve_under_root(rel)
+    if target.exists():
+        raise FileExistsError(rel)
+    write_flow(rel, flow)
+    return rel, flow
+
+
+def create_pipeline_template(
+    *,
+    folder: str,
+    slug: str,
+    display_name: str,
+    step_count: int,
+) -> tuple[str, FlowDefinition]:
+    rel, flow = create_flow(folder=folder, slug=slug, display_name=display_name, step_count=step_count)
+    entry = _flow_catalog_entry({"path": rel})
+    if entry is not None and _catalog_entry_is_desk(entry):
+        raise ValueError("Pipeline templates cannot have beat brief or Edition topic metadata")
+    return rel, flow
+
+
 def save_step_response_to_disk(*, run_id: str, step_order: int, step_key: str, content: str) -> Path:
     folder = run_outputs_root() / run_id / "steps"
     folder.mkdir(parents=True, exist_ok=True)
@@ -394,35 +494,52 @@ def create_flow_from_template(
     if target.exists():
         raise FileExistsError(rel)
 
-    steps = []
-    old_steps = sorted(flow.steps, key=lambda item: item.order)
-    id_map: dict[str, str] = {}
-    for step in old_steps:
-        copied = step.model_copy(deep=True)
-        old_id = copied.step_id
-        copied.step_id = str(uuid.uuid4())
-        id_map[old_id] = copied.step_id
-        steps.append(copied)
-
-    for step in steps:
-        if step.loop and step.loop.goto_step_id:
-            step.loop.goto_step_id = id_map.get(step.loop.goto_step_id, step.loop.goto_step_id)
-        if step.completion and step.completion.loop_goto_step_id:
-            step.completion.loop_goto_step_id = id_map.get(
-                step.completion.loop_goto_step_id,
-                step.completion.loop_goto_step_id,
-            )
-
-    article_step_id = id_map.get(flow.article_step_id or "", flow.article_step_id)
+    steps, article_step_id = _remap_flow_steps(flow)
     created = FlowDefinition(
         slug=slug,
         display_name=display_name,
         max_iterations=flow.max_iterations,
         article_step_id=article_step_id,
+        beat_brief=flow.beat_brief,
+        edition_topic_slug=flow.edition_topic_slug,
+        performance=flow.performance.model_copy(deep=True) if flow.performance else None,
         steps=steps,
     )
     write_flow(rel, created)
     return rel, created
+
+
+def apply_pipeline_template(
+    *,
+    rel_path: str,
+    template_path: str,
+    template_flow: FlowDefinition | None = None,
+) -> FlowDefinition:
+    """Copy pipeline steps from a template onto an existing desk."""
+    target_rel = normalize_flow_rel_path(rel_path)
+    if is_template_path(target_rel):
+        raise ValueError("Cannot apply a pipeline to a template file — open a desk instead")
+
+    desk = read_flow(target_rel)
+    _assert_desk_flow(desk)
+
+    template = template_flow if template_flow is not None else _resolve_pipeline_template(template_path)
+    steps, article_step_id = _remap_flow_steps(template)
+
+    updates: dict[str, Any] = {
+        "max_iterations": template.max_iterations,
+        "article_step_id": article_step_id,
+        "performance": template.performance.model_copy(deep=True) if template.performance else None,
+        "steps": steps,
+    }
+    if not desk.beat_brief.strip() and template.beat_brief.strip():
+        updates["beat_brief"] = template.beat_brief
+    if not desk.edition_topic_slug.strip() and template.edition_topic_slug.strip():
+        updates["edition_topic_slug"] = template.edition_topic_slug
+
+    updated = desk.model_copy(update=updates)
+    write_flow(target_rel, updated)
+    return updated
 
 
 def import_flow(

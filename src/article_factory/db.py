@@ -32,6 +32,7 @@ _SCHEMA_PATCHES: dict[str, list[tuple[str, str]]] = {
         ("selected_puller", "VARCHAR(128) NOT NULL DEFAULT ''"),
         ("selected_model", "VARCHAR(128) NOT NULL DEFAULT ''"),
         ("pipeline_state", "JSON"),
+        ("topic_prompt", "TEXT"),
         ("flow_path", "VARCHAR(256) NOT NULL DEFAULT 'sports/standard-4-step.flow.json'"),
         ("flow_version_id", "INTEGER"),
         ("topic_queue_snapshot_id", "INTEGER"),

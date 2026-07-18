@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PersonaEditor from "../components/PersonaEditor";
 import { api, type Persona } from "../api";
-import { deskDetailUrl } from "../utils/desks";
+import { deskDetailUrl, addStaffPersonaToDesk } from "../utils/desks";
 
 const emptyPersona = (): Persona => ({
   slug: "",
@@ -99,11 +99,17 @@ export default function PersonaDetailPage() {
         editingSlug={isNew ? null : persona.slug}
         deskPath={deskPath}
         onSaved={(saved) => {
+          if (isNew && deskPath) {
+            void addStaffPersonaToDesk(deskPath, saved.slug)
+              .then(() => {
+                navigate(deskDetailUrl(deskPath));
+              })
+              .catch((e: Error) => setError(e.message));
+            return;
+          }
           setMessage(isNew ? `Created “${saved.name}”.` : `Updated “${saved.name}”.`);
           if (isNew) {
-            navigate(`/personas/${encodeURIComponent(saved.slug)}${deskPath ? `?desk=${encodeURIComponent(deskPath)}` : ""}`, {
-              replace: true,
-            });
+            navigate(`/personas/${encodeURIComponent(saved.slug)}`, { replace: true });
             return;
           }
           setPersona(saved);

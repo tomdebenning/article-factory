@@ -1307,15 +1307,27 @@ async def test_continue_active_run_fails_interrupted_run(
             StepExecution(
                 run_id="interrupted-run",
                 step_key="writer",
-                status="waiting",
+                status="completed",
                 puller="gpu-01",
                 model="test-model",
             )
         )
         db.commit()
 
+        monkeypatch.setattr(
+            "article_factory.orchestrator.runner.ensure_run_pipeline_state",
+            lambda _db, _run: False,
+        )
+        executed = {"called": False}
+
+        async def fake_execute(*args, **kwargs):
+            executed["called"] = True
+
+        monkeypatch.setattr("article_factory.orchestrator.runner._execute_pipeline", fake_execute)
+
         handled = await continue_active_run(db, run)
         assert handled is True
+        assert executed["called"] is False
         db.refresh(run)
         assert run.status == "failed"
         assert "interrupted" in (run.error or "").lower()

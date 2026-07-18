@@ -16,6 +16,8 @@ import PersonaDetailPage from "./pages/PersonaDetailPage";
 import ShiftsBoardPage from "./pages/ShiftsBoardPage";
 import ShiftRosterReviewPage from "./pages/ShiftRosterReviewPage";
 import StartFlowsPage from "./pages/StartFlowsPage";
+import PipelineTemplateCreatePage from "./pages/PipelineTemplateCreatePage";
+import PipelineTemplatesPage from "./pages/PipelineTemplatesPage";
 import PromptsPage from "./pages/PromptsPage";
 import QueuePage from "./pages/QueuePage";
 import RunDetailPage from "./pages/RunDetailPage";
@@ -31,14 +33,14 @@ export default function App() {
         <h1>{factoryName}</h1>
         <nav>
           <Link to="/">Home</Link>
-          <Link to="/shifts">Shifts</Link>
-          <Link to="/queue">Active</Link>
-          <Link to="/start-flows">Plan a shift</Link>
           <Link to="/flows">Desks</Link>
-          <Link to="/personas">Desk staff</Link>
+          <Link to="/templates">Templates</Link>
+          <Link to="/shifts">Shifts</Link>
+          <Link to="/personas">Staff</Link>
           <Link to="/articles">Artifacts</Link>
           <Link to="/stats">Stats</Link>
           <Link to="/settings">Settings</Link>
+          <Link to="/queue">Active</Link>
         </nav>
       </header>
       <FactoryStatusBar />
@@ -55,6 +57,9 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/desks" element={<DeskDetailPage />} />
           <Route path="/desks/shift" element={<DeskShiftPage />} />
+          <Route path="/templates" element={<PipelineTemplatesPage />} />
+          <Route path="/templates/new" element={<PipelineTemplateCreatePage />} />
+          <Route path="/templates/edit" element={<FlowEditorPage />} />
           <Route path="/flows" element={<FlowsPage />} />
           <Route path="/flows/new" element={<FlowCreatePage />} />
           <Route path="/flows/edit" element={<FlowEditorPage />} />

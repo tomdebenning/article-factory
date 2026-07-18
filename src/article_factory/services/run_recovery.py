@@ -257,6 +257,8 @@ def reconcile_orphaned_runs(db: Session) -> int:
         if ensure_run_pipeline_state(db, run):
             continue
         step = latest_step_execution(db, run.run_id)
+        if step is not None and step.status in _IN_FLIGHT_STEP_STATUSES:
+            continue
         if step is None or step.status == "completed":
             fail_interrupted_run(
                 db,
@@ -265,7 +267,7 @@ def reconcile_orphaned_runs(db: Session) -> int:
             )
             failed += 1
             continue
-        if step.status in _IN_FLIGHT_STEP_STATUSES or step.status == "failed":
+        if step.status == "failed":
             fail_interrupted_run(
                 db,
                 run,

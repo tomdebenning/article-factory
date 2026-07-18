@@ -4,14 +4,19 @@ import pytest
 
 from article_factory.services.flow_schema import new_flow_definition
 from article_factory.services.flow_storage import (
+    apply_pipeline_template,
+    create_desk,
     create_flow,
     create_flow_from_template,
     create_folder,
+    create_pipeline_template,
     delete_flow,
     delete_folder,
     export_flow,
     import_flow,
     list_folder_flows,
+    list_desks,
+    list_pipeline_templates,
     list_templates,
     list_tree,
     normalize_flow_rel_path,
@@ -98,6 +103,64 @@ def test_create_from_template_and_list_templates(configured_db) -> None:
             slug="x",
             display_name="X",
         )
+
+
+def test_apply_pipeline_template_preserves_desk_metadata(configured_db) -> None:
+    templates = list_templates()
+    template_path = next(item["path"] for item in templates if item["slug"] == "writer-review")
+    desk_path, _desk = create_desk(
+        folder="desks",
+        slug="fresh-desk",
+        display_name="Fresh Desk",
+        beat_brief="Local college sports and prep coverage.",
+        edition_topic_slug="sports",
+    )
+
+    updated = apply_pipeline_template(rel_path=desk_path, template_path=template_path)
+    assert updated.slug == "fresh-desk"
+    assert updated.display_name == "Fresh Desk"
+    assert updated.beat_brief == "Local college sports and prep coverage."
+    assert updated.edition_topic_slug == "sports"
+    assert len(updated.steps) == 2
+    assert updated.steps[0].label == "Writer"
+
+    saved = read_flow(desk_path)
+    assert saved.steps[0].system_prompt == updated.steps[0].system_prompt
+
+    with pytest.raises(ValueError, match="template file"):
+        apply_pipeline_template(rel_path=template_path, template_path=template_path)
+
+
+def test_list_pipeline_templates_includes_library_flows(configured_db) -> None:
+    rel_path, _flow = create_flow(folder="", slug="library-template", display_name="Library Template", step_count=2)
+    templates = list_pipeline_templates()
+    paths = {item["path"] for item in templates}
+    assert rel_path in paths or "library-template.flow.json" in paths
+    assert any(item["path"].startswith("_templates/") for item in templates)
+
+
+def test_operational_desks_excluded_from_pipeline_templates(configured_db) -> None:
+    desk_path, _desk = create_desk(
+        folder="",
+        slug="ops-desk",
+        display_name="Ops Desk",
+        beat_brief="Local news coverage.",
+        edition_topic_slug="local",
+    )
+    template_path, _template = create_pipeline_template(
+        folder="_templates",
+        slug="ops-template",
+        display_name="Ops Template",
+        step_count=2,
+    )
+
+    desk_paths = {item["path"] for item in list_desks()}
+    template_paths = {item["path"] for item in list_pipeline_templates()}
+
+    assert desk_path in desk_paths
+    assert desk_path not in template_paths
+    assert template_path in template_paths
+    assert template_path not in desk_paths
 
 
 def test_list_tree_and_folder_flows_errors(configured_db) -> None:

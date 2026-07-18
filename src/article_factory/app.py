@@ -20,6 +20,7 @@ from article_factory.routes.telemetry import router as telemetry_router
 from article_factory.routes.prompt_improvement import router as prompt_improvement_router
 from article_factory.routes.personas import router as personas_router
 from article_factory.routes.shifts import router as shifts_router
+from article_factory.routes.desks import router as desks_router
 from article_factory.routes.standing_orders import router as standing_orders_router
 from article_factory.services.flow_queues import ensure_default_flow_queue
 from article_factory.services.flow_storage import ensure_default_flows
@@ -133,5 +134,6 @@ def create_app() -> FastAPI:
     app.include_router(prompt_improvement_router)
     app.include_router(personas_router)
     app.include_router(shifts_router)
+    app.include_router(desks_router)
     app.include_router(standing_orders_router)
     return app

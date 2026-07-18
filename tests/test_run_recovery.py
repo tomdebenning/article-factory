@@ -39,12 +39,11 @@ def test_reconcile_orphaned_runs_fails_interrupted_run(configured_db) -> None:
         db.commit()
 
         failed = reconcile_orphaned_runs(db)
-        assert failed == 1
+        assert failed == 0
         db.refresh(run)
         db.refresh(item)
-        assert run.status == "failed"
-        assert "Retry" in (run.error or "")
-        assert item.status == "failed"
+        assert run.status == "running"
+        assert item.status == "running"
     finally:
         db.close()
 

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     control_plane_url: str = "http://127.0.0.1:8000"
-    cms_url: str = "http://127.0.0.1:8200"
+    cms_url: str = "https://127.0.0.1:8200"
     cms_api_key: str = ""
     factory_api_key: str = ""
     database_url: str = "sqlite:///./data/factory.db"

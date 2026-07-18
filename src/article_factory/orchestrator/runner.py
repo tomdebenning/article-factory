@@ -108,6 +108,9 @@ def _front_queue_priority(db: Session) -> int:
 
 
 def _topic_prompt_for_run(db: Session, run: FactoryRun) -> str:
+    stored = (run.topic_prompt or "").strip()
+    if stored:
+        return stored
     if run.shift_assignment_id:
         assignment = db.get(ShiftAssignment, run.shift_assignment_id)
         if assignment and assignment.prompt.strip():
@@ -334,7 +337,37 @@ async def _execute_pipeline(
         raise
 
 
-async def run_pipeline_for_topic(
+async def schedule_pipeline_for_topic(
+    db: Session,
+    *,
+    topic_slug: str,
+    topic_prompt: str,
+    queue_item_id: int | None = None,
+    selected_puller: str | None = None,
+    flow_path: str | None = None,
+    flow_version_id: int | None = None,
+    shift_plan_id: int | None = None,
+    shift_assignment_id: int | None = None,
+    reporter_persona_slug: str | None = None,
+) -> FactoryRun:
+    """Create a run and execute it on the factory loop (returns immediately)."""
+    run = await _begin_pipeline_run(
+        db,
+        topic_slug=topic_slug,
+        topic_prompt=topic_prompt,
+        queue_item_id=queue_item_id,
+        selected_puller=selected_puller,
+        flow_path=flow_path,
+        flow_version_id=flow_version_id,
+        shift_plan_id=shift_plan_id,
+        shift_assignment_id=shift_assignment_id,
+        reporter_persona_slug=reporter_persona_slug,
+    )
+    factory_loop.schedule_run(run.run_id, topic_prompt)
+    return run
+
+
+async def _begin_pipeline_run(
     db: Session,
     *,
     topic_slug: str,
@@ -363,6 +396,7 @@ async def run_pipeline_for_topic(
     run = FactoryRun(
         run_id=new_run_id(),
         topic_slug=topic_slug,
+        topic_prompt=topic_prompt.strip(),
         flow_path=resolved_flow,
         queue_item_id=queue_item_id,
         shift_plan_id=shift_plan_id,
@@ -377,6 +411,9 @@ async def run_pipeline_for_topic(
         plan = db.get(ShiftPlan, shift_plan_id)
         if plan is not None and (plan.default_model or "").strip():
             run.selected_model = plan.default_model.strip()
+    if not (run.selected_model or "").strip():
+        runtime = load_runtime_settings(db)
+        run.selected_model = (runtime.default_model or "").strip()
 
     persona_slug = (reporter_persona_slug or "").strip() or None
     if persona_slug:
@@ -409,7 +446,34 @@ async def run_pipeline_for_topic(
     cms = CmsClient(base_url=runtime.cms_url, api_key=runtime.cms_api_key) if _cms_configured(runtime) else None
     await _emit_run_event(cms, run_id=run.run_id, topic_slug=topic_slug, event="run_started")
     schedule_showroom_status_refresh(force=True)
+    return run
 
+
+async def run_pipeline_for_topic(
+    db: Session,
+    *,
+    topic_slug: str,
+    topic_prompt: str,
+    queue_item_id: int | None = None,
+    selected_puller: str | None = None,
+    flow_path: str | None = None,
+    flow_version_id: int | None = None,
+    shift_plan_id: int | None = None,
+    shift_assignment_id: int | None = None,
+    reporter_persona_slug: str | None = None,
+) -> FactoryRun:
+    run = await _begin_pipeline_run(
+        db,
+        topic_slug=topic_slug,
+        topic_prompt=topic_prompt,
+        queue_item_id=queue_item_id,
+        selected_puller=selected_puller,
+        flow_path=flow_path,
+        flow_version_id=flow_version_id,
+        shift_plan_id=shift_plan_id,
+        shift_assignment_id=shift_assignment_id,
+        reporter_persona_slug=reporter_persona_slug,
+    )
     return await _execute_pipeline(db, run=run, topic_prompt=topic_prompt)
 
 
@@ -420,10 +484,26 @@ async def continue_active_run(db: Session, run: FactoryRun) -> bool:
         return True
 
     if not run.pipeline_state and not ensure_run_pipeline_state(db, run):
-        if latest_step_execution(db, run.run_id) is None:
-            topic_prompt = _topic_prompt_for_run(db, run)
+        step = latest_step_execution(db, run.run_id)
+        topic_prompt = _topic_prompt_for_run(db, run)
+        if step is None:
             logger.info("Restarting run %s — pipeline never reached the control plane", run.run_id)
             await _execute_pipeline(db, run=run, topic_prompt=topic_prompt)
+            return True
+        if step.status in {"pending", "submitted", "waiting", "pulled", "failed"}:
+            resume_step = run.current_step or step.step_key
+            logger.info(
+                "Resuming in-flight run %s from step %s (execution status=%s)",
+                run.run_id,
+                resume_step,
+                step.status,
+            )
+            await _execute_pipeline(
+                db,
+                run=run,
+                topic_prompt=topic_prompt,
+                resume_from_step=resume_step,
+            )
             return True
         fail_interrupted_run(
             db,
@@ -548,6 +628,26 @@ class FactoryLoop:
         task = asyncio.create_task(wrapped())
         self._run_workers[key] = task
         task.add_done_callback(lambda _t: self._run_workers.pop(key, None))
+
+    def schedule_run(self, run_id: str, topic_prompt: str) -> None:
+        """Execute a newly created run on the factory loop without blocking the caller."""
+        worker_key = f"run-{run_id}"
+        if worker_key in self._run_workers:
+            return
+        self._spawn_worker(worker_key, self._execute_scheduled_run(run_id, topic_prompt))
+        self.request_dispatch()
+
+    async def _execute_scheduled_run(self, run_id: str, topic_prompt: str) -> None:
+        from article_factory.db import SessionLocal
+
+        db = SessionLocal()
+        try:
+            run = db.query(FactoryRun).filter_by(run_id=run_id).one_or_none()
+            if run is None or run.status != "running":
+                return
+            await _execute_pipeline(db, run=run, topic_prompt=topic_prompt)
+        finally:
+            db.close()
 
     async def _loop(self) -> None:
         while self._running:

@@ -43,6 +43,28 @@ async def take_requeue_flow_path(run_id: str) -> str | None:
         return _requeue_after_cancel.pop(run_id, None)
 
 
+def fail_superseded_in_flight_steps(
+    db: Session,
+    run_id: str,
+    step_key: str,
+    *,
+    error: str = "Superseded by new attempt",
+) -> int:
+    """Mark stale in-flight executions for a step before starting a fresh attempt."""
+    now = datetime.now(timezone.utc)
+    steps = (
+        db.query(StepExecution)
+        .filter_by(run_id=run_id, step_key=step_key)
+        .filter(StepExecution.status.in_(_IN_FLIGHT_STEP_STATUSES))
+        .all()
+    )
+    for step in steps:
+        step.status = "failed"
+        step.error = error
+        step.completed_at = now
+    return len(steps)
+
+
 def fail_in_flight_steps(db: Session, run_id: str, *, error: str = "Run stopped") -> int:
     now = datetime.now(timezone.utc)
     steps = (
