@@ -79,11 +79,11 @@ export default function DeskShiftPage() {
         {" · Shift"}
       </p>
       <h2>
-        {deskShiftLabel(shiftKey)} shift
+        {deskShiftLabel(shiftKey)} shift — standing assignments
       </h2>
       <p className="hint">
-        Standing orders for <code>{path}</code>. At T-15 before shift start, these topics auto-fill the roster; AI
-        suggests any remaining slots up to the target count.
+        Recurring story angles for <code>{path}</code>. These define <strong>what</strong> to cover; pipeline prompts
+        on the desk define <strong>how</strong> each step writes.
       </p>
 
       <div className="desk-button-row desk-shift-tabs">
@@ -108,7 +108,13 @@ export default function DeskShiftPage() {
           placeholder="Defaults to topic list length"
         />
       </label>
-      <TopicListEditor topics={topics} onChange={setTopics} label="Standing topics" />
+      <TopicListEditor
+        topics={topics}
+        onChange={setTopics}
+        label="Standing assignments"
+        countLabel="standing assignment"
+        emptyLabel="No standing assignments yet. Add story angles this desk should cover each shift."
+      />
       {order?.updated_at && (
         <p className="hint">Last saved {new Date(order.updated_at).toLocaleString()}.</p>
       )}

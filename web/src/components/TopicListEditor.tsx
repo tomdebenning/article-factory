@@ -19,6 +19,8 @@ export type TopicListEditorProps = {
   disabled?: boolean;
   placeholder?: string;
   label?: string;
+  countLabel?: string;
+  emptyLabel?: string;
   showUpload?: boolean;
 };
 
@@ -27,7 +29,9 @@ export default function TopicListEditor({
   onChange,
   disabled = false,
   placeholder = "An article about Oklahoma State Football",
-  label = "Topics",
+  label = "Assignments",
+  countLabel = "assignment",
+  emptyLabel = "No assignments yet. Add one above or upload a file.",
   showUpload = true,
 }: TopicListEditorProps) {
   const [draft, setDraft] = useState("");
@@ -86,7 +90,7 @@ export default function TopicListEditor({
       <div className="topic-list-editor-header">
         <span className="topic-list-editor-label">{label}</span>
         <span className="topic-list-editor-count">
-          {topics.length} {topics.length === 1 ? "topic" : "topics"}
+          {topics.length} {topics.length === 1 ? countLabel : `${countLabel}s`}
         </span>
       </div>
 
@@ -127,7 +131,7 @@ export default function TopicListEditor({
       )}
 
       {topics.length === 0 ? (
-        <p className="topic-list-empty hint">No topics yet. Add one above or upload a file.</p>
+        <p className="topic-list-empty hint">{emptyLabel}</p>
       ) : (
         <ol className="topic-list-items">
           {topics.map((topic, index) => (
@@ -138,7 +142,7 @@ export default function TopicListEditor({
                 type="button"
                 className="topic-list-remove"
                 disabled={disabled}
-                aria-label={`Remove topic ${index + 1}`}
+                aria-label={`Remove assignment ${index + 1}`}
                 onClick={() => removeTopic(index)}
               >
                 ×
@@ -150,7 +154,7 @@ export default function TopicListEditor({
 
       {topics.length > 0 && (
         <button type="button" className="secondary topic-list-clear" disabled={disabled} onClick={clearAll}>
-          Clear all topics
+          Clear all assignments
         </button>
       )}
     </div>

@@ -598,6 +598,7 @@ export type FlowDefinition = {
   } | null;
   reporter_pool?: string[];
   beat_brief?: string;
+  edition_topic_slug?: string;
   steps: FlowStep[];
 };
 

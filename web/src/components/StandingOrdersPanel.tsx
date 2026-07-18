@@ -74,8 +74,8 @@ export default function StandingOrdersPanel({ deskPath }: Props) {
     <div className="step-card flow-standing-orders-card">
       <h3>Standing orders</h3>
       <p className="hint">
-        Recurring assignment templates per shift. At T-15 before shift start, these topics auto-fill the roster; AI
-        suggests any remaining slots up to the target count.
+        Recurring assignment templates per shift. At T-15 before shift start, these story angles auto-fill the roster;
+        AI suggests any remaining slots up to the target count.
       </p>
       <div className="flow-standing-orders-tabs">
         {SHIFT_TABS.map((tab) => (
@@ -99,7 +99,12 @@ export default function StandingOrdersPanel({ deskPath }: Props) {
           placeholder="Defaults to topic list length"
         />
       </label>
-      <TopicListEditor topics={topics} onChange={setTopics} label="Standing topics" />
+      <TopicListEditor
+        topics={topics}
+        onChange={setTopics}
+        label="Standing assignments"
+        countLabel="standing assignment"
+      />
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
       <button type="button" className="secondary" disabled={saving} onClick={save}>

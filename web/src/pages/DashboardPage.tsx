@@ -98,7 +98,7 @@ function DeskDashboardTile({
   return (
     <Link to={deskDetailUrl(desk.path)} className={`desk-tile desk-tile-dashboard${runningCount > 0 ? " is-active" : ""}`}>
       <span className="desk-tile-label">{desk.display_name}</span>
-      <span className="desk-tile-role">{desk.step_count} pipeline steps</span>
+      <span className="desk-tile-role">What to cover</span>
       <span className="desk-tile-meta">
         {runningCount > 0
           ? `${runningCount} running now`
@@ -245,7 +245,7 @@ export default function DashboardPage() {
         <div className="dashboard-section-head">
           <div>
             <h3>Your desks</h3>
-            <p className="hint">Open a desk to manage staff, shifts, and standing orders.</p>
+            <p className="hint">Open a desk to manage what it covers and how it writes.</p>
           </div>
           {desks.length > 0 && (
             <Link to="/flows/new" className="secondary">

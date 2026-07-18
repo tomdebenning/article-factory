@@ -20,7 +20,9 @@ export default function PersonasPage() {
         <div>
           <h2>Desk staff</h2>
           <p className="hint">
-            Reporter voices for your desks. Assign staff to a desk from that desk&apos;s reporter pool.
+            Writing voices for reporters. Assign staff to a desk from that desk&apos;s reporter pool — voices define
+            <strong> how </strong>
+            stories read; assignments on the desk define <strong>what</strong> to cover.
           </p>
         </div>
         <Link to="/personas/new" className="primary">
@@ -41,7 +43,7 @@ export default function PersonasPage() {
           {personas.map((persona) => (
             <Link key={persona.slug} to={personaDetailUrl(persona.slug)} className="desk-tile">
               <span className="desk-tile-label">{persona.name}</span>
-              <span className="desk-tile-role">Reporter</span>
+              <span className="desk-tile-role">Writing voice</span>
               {persona.description ? <span className="desk-tile-meta">{persona.description}</span> : null}
             </Link>
           ))}

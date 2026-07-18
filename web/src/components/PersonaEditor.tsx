@@ -23,7 +23,7 @@ export default function PersonaEditor({ initial, editingSlug, deskPath, onSaved,
       return;
     }
     if (!style_prompt) {
-      setError("Enter a style prompt.");
+      setError("Enter a writing voice prompt.");
       return;
     }
 
@@ -83,12 +83,12 @@ export default function PersonaEditor({ initial, editingSlug, deskPath, onSaved,
         />
       </label>
       <label>
-        Style prompt
+        Writing voice
         <textarea
           rows={8}
           value={draft.style_prompt}
           disabled={busy}
-          placeholder="Write in a concise, energetic sports journalism voice..."
+          placeholder="How this reporter writes — tone, rhythm, audience, and style constraints."
           onChange={(e) => setDraft({ ...draft, style_prompt: e.target.value })}
         />
       </label>

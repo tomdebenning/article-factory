@@ -299,13 +299,13 @@ export default function FlowsPage() {
       </div>
       <p className="hint">
         Desks define the editorial process for a beat — reporter, editor, and other steps. Each assignment
-        runs through one desk. Edit steps, loops, and prompts here.
+        runs through one desk. Open a desk for coverage and assignments; edit pipeline prompts for how each step works.
       </p>
       <div className="flow-default-banner">
         <span>Default desk:</span>
         <code>{defaultFlowPath}</code>
         <Link to="/settings">Change in settings</Link>
-        <Link to={`/flows/edit?path=${encodeURIComponent(defaultFlowPath)}`}>Open prompts</Link>
+        <Link to={`/desks?path=${encodeURIComponent(defaultFlowPath)}`}>Open default desk</Link>
       </div>
       {error && <p className="error">{error}</p>}
       {message && <p className="ok">{message}</p>}
@@ -378,7 +378,7 @@ export default function FlowsPage() {
                       Open desk
                     </Link>
                     <Link to={`/flows/edit?path=${encodeURIComponent(flow.path)}`} className="secondary">
-                      Edit pipeline
+                      Pipeline prompts
                     </Link>
                     <Link
                       to={`/flows/performance?path=${encodeURIComponent(flow.path)}`}

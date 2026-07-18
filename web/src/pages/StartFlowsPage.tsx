@@ -223,12 +223,31 @@ export default function StartFlowsPage() {
                     placeholder="sports"
                   />
                 </label>
+                <p className="hint start-flows-topic-hint">
+                  Where articles publish in The Edition — not the assignment text. Defaults from the desk when set.
+                </p>
                 <label>
                   Assigned desk
                   <select
                     value={desk.desk_path}
                     disabled={flowsLoading}
-                    onChange={(e) => updateDesk(index, { desk_path: e.target.value })}
+                    onChange={(e) => {
+                      const desk_path = e.target.value;
+                      updateDesk(index, { desk_path });
+                      if (!desk_path) {
+                        return;
+                      }
+                      void api.getFlow(desk_path).then(({ flow }) => {
+                        const editionTopic = flow.edition_topic_slug?.trim();
+                        if (editionTopic) {
+                          setDesks((prev) =>
+                            prev.map((entry, i) =>
+                              i === index ? { ...entry, desk_path, topic_slug: editionTopic } : entry,
+                            ),
+                          );
+                        }
+                      });
+                    }}
                   >
                     {!desk.desk_path && <option value="">Choose a desk…</option>}
                     {flowSelectOptions.map((option) => (
@@ -257,6 +276,8 @@ export default function StartFlowsPage() {
                 topics={desk.topics}
                 onChange={(topics) => updateDesk(index, { topics })}
                 disabled={busy}
+                label="Shift assignments"
+                countLabel="assignment"
               />
             </div>
           ))}

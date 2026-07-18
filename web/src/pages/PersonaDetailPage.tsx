@@ -88,7 +88,9 @@ export default function PersonaDetailPage() {
       </p>
       <h2>{isNew ? "Add staff member" : persona.name}</h2>
       <p className="hint">
-        Style and tone for reporters on the beat. Assign this person to a desk from the desk reporter pool.
+        Writing voice defines <strong>how</strong> the reporter sounds. Beat briefs and assignments on the desk define
+        <strong> what </strong>
+        to cover.
       </p>
       {message && <p className="ok">{message}</p>}
 

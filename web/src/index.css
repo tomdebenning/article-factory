@@ -2205,6 +2205,19 @@ select { cursor: pointer; }
   margin: 0.75rem 0 1rem;
 }
 
+.desk-section-what {
+  border-left: 4px solid #3fb950;
+}
+
+.desk-section-how {
+  border-left: 4px solid #58a6ff;
+}
+
+.desk-model-copy {
+  margin: 0 0 0.35rem;
+  max-width: 44rem;
+}
+
 .personas-detail-footer {
   margin-top: 1rem;
 }

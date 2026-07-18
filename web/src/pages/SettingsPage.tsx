@@ -443,8 +443,12 @@ export default function SettingsPage() {
           </div>
         </label>
         <p className="hint">
+          <Link to={`/desks?path=${encodeURIComponent(settings.default_flow_path)}`}>
+            Open default desk
+          </Link>
+          {" · "}
           <Link to={`/flows/edit?path=${encodeURIComponent(settings.default_flow_path)}`}>
-            Edit default desk prompts
+            Edit default pipeline prompts
           </Link>
         </p>
       </div>

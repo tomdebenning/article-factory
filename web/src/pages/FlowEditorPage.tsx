@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type FlowDefinition, type FlowStep } from "../api";
 import FlowMoveForm from "../components/FlowMoveForm";
-import StandingOrdersPanel from "../components/StandingOrdersPanel";
 import { downloadFlowJson } from "../utils/flowFiles";
 import { notifyFlowsChanged } from "../utils/flowSelectOptions";
 
@@ -57,11 +56,6 @@ export default function FlowEditorPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [moving, setMoving] = useState(false);
-  const [personas, setPersonas] = useState<Array<{ slug: string; name: string }>>([]);
-
-  useEffect(() => {
-    void api.listPersonas().then((data) => setPersonas(data.personas)).catch(() => undefined);
-  }, []);
 
   useEffect(() => {
     if (!stepKey || !flow) {
@@ -159,7 +153,7 @@ export default function FlowEditorPage() {
       .saveFlow(path, payload)
       .then((saved) => {
         setFlow(saved.flow);
-        setMessage("Desk saved.");
+        setMessage("Pipeline saved.");
         notifyFlowsChanged();
       })
       .catch((e: Error) => setError(e.message))
@@ -186,13 +180,13 @@ export default function FlowEditorPage() {
   return (
     <section className="card flow-editor">
       <div className="flow-editor-head">
-        <p><Link to="/flows">← All desks</Link></p>
+        <p><Link to={`/desks?path=${encodeURIComponent(path)}`}>← Desk overview</Link></p>
         <div className="flow-editor-head-actions">
           <Link
             to={`/flows/performance?path=${encodeURIComponent(path)}`}
             className="secondary"
           >
-            Prompt performance
+            Pipeline performance
           </Link>
           <button
             type="button"
@@ -209,6 +203,10 @@ export default function FlowEditorPage() {
         </div>
       </div>
       <h2>{flow.display_name}</h2>
+      <p className="hint">
+        Pipeline prompts define <strong>how</strong> each step writes and reviews work. Beat brief, Edition topic, and
+        assignments live on the <Link to={`/desks?path=${encodeURIComponent(path)}`}>desk overview</Link>.
+      </p>
       {readOnlyVersion && versionId && (
         <div className="flow-template-banner">
           <strong>Viewing saved version {versionLabel}</strong>
@@ -242,7 +240,7 @@ export default function FlowEditorPage() {
         {" · "}
         <code>{path}</code> · Templates: {"{{topic}}"}, {"{{feedback}}"}, {"{{step_key}}"} (e.g. {"{{writer}}"}).
         Review steps should end with <code>VERDICT: ACCEPT</code> or <code>VERDICT: REJECT</code>.
-        Model and puller are chosen on <Link to="/start-flows">Plan a shift</Link>, not in the desk file.
+        {"{{topic}}"} is filled from shift assignments — the story angle, not the Edition category.
       </p>
       {message && <p className="ok">{message}</p>}
       {error && <p className="error">{error}</p>}
@@ -276,66 +274,6 @@ export default function FlowEditorPage() {
         <input value={flow.display_name} onChange={(e) => setFlow({ ...flow, display_name: e.target.value })} />
       </label>
 
-      {!readOnlyVersion && (
-        <div className="step-card flow-reporter-pool-card">
-          <h3>Beat brief</h3>
-          <p className="hint">
-            Mission statement for this desk — the Assignment Desk uses it when suggesting story topics at T-15.
-          </p>
-          <textarea
-            rows={4}
-            value={flow.beat_brief || ""}
-            onChange={(e) => setFlow({ ...flow, beat_brief: e.target.value })}
-            placeholder="e.g. Cover college sports in the Pacific Northwest with emphasis on game recaps and athlete profiles."
-          />
-        </div>
-      )}
-
-      {!readOnlyVersion && !isTemplateFlowPath(path) && (
-        <StandingOrdersPanel deskPath={path} />
-      )}
-
-      {!readOnlyVersion && (
-        <div className="step-card flow-reporter-pool-card">
-          <h3>Reporter pool</h3>
-          <p className="hint">
-            Desk staff who can cover the Reporter role on this desk. Assignments pick from this pool when a shift runs
-            (round robin or least recently used).
-          </p>
-          {personas.length === 0 ? (
-            <p className="hint">
-              No desk staff yet. <Link to="/personas">Create reporters</Link> first.
-            </p>
-          ) : (
-            <ul className="flow-reporter-pool-list">
-              {personas.map((persona) => {
-                const pool = flow.reporter_pool || [];
-                const checked = pool.includes(persona.slug);
-                return (
-                  <li key={persona.slug}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          const next = new Set(flow.reporter_pool || []);
-                          if (e.target.checked) {
-                            next.add(persona.slug);
-                          } else {
-                            next.delete(persona.slug);
-                          }
-                          setFlow({ ...flow, reporter_pool: [...next] });
-                        }}
-                      />
-                      {persona.name}
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
       <label>
         Max iterations (review loops)
         <input
@@ -561,7 +499,7 @@ export default function FlowEditorPage() {
           Add step
         </button>
         <button type="button" className="primary" disabled={saving || readOnlyVersion} onClick={save}>
-          {saving ? "Saving…" : "Save desk"}
+          {saving ? "Saving…" : "Save pipeline"}
         </button>
       </div>
     </section>
