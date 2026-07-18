@@ -10,7 +10,7 @@ import {
   type ReadinessCheck,
   type RunSummary,
 } from "../api";
-import { deskDetailUrl, loadDeskSummaries, type DeskSummary } from "../utils/desks";
+import { deskCoverageMeta, deskCoverageSubtitle, deskCoverageTitle, deskDetailUrl, loadDeskSummaries, type DeskSummary } from "../utils/desks";
 
 function ReadinessChecklist({ checks }: { checks: ReadinessCheck[] }) {
   return (
@@ -36,10 +36,12 @@ function ReadinessChecklist({ checks }: { checks: ReadinessCheck[] }) {
 function ActiveRunCard({
   run,
   busyRunId,
+  deskLabel,
   onStop,
 }: {
   run: RunSummary;
   busyRunId: string | null;
+  deskLabel?: string;
   onStop: (run: RunSummary) => void;
 }) {
   const isRunning = run.status === "running";
@@ -58,7 +60,7 @@ function ActiveRunCard({
         <span className="hint">
           {run.flow_path && (
             <>
-              <Link to={deskDetailUrl(run.flow_path)}>{run.flow_path}</Link>
+              <Link to={deskDetailUrl(run.flow_path)}>{deskLabel ?? run.flow_path}</Link>
               {" · "}
             </>
           )}
@@ -97,12 +99,11 @@ function DeskDashboardTile({
 }) {
   return (
     <Link to={deskDetailUrl(desk.path)} className={`desk-tile desk-tile-dashboard${runningCount > 0 ? " is-active" : ""}`}>
-      <span className="desk-tile-label">{desk.display_name}</span>
-      <span className="desk-tile-role">What to cover</span>
+      <span className="desk-tile-label">{deskCoverageTitle(desk)}</span>
+      <span className="desk-tile-role">{deskCoverageSubtitle(desk)}</span>
       <span className="desk-tile-meta">
-        {runningCount > 0
-          ? `${runningCount} running now`
-          : desk.path}
+        {runningCount > 0 ? `${runningCount} assignment${runningCount === 1 ? "" : "s"} running · ` : ""}
+        {deskCoverageMeta(desk)}
       </span>
     </Link>
   );
@@ -170,6 +171,14 @@ export default function DashboardPage() {
     }
     return map;
   }, [status]);
+
+  const deskLabelByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const desk of desks) {
+      map.set(desk.path, deskCoverageTitle(desk));
+    }
+    return map;
+  }, [desks]);
 
   if (error) {
     return (
@@ -245,7 +254,9 @@ export default function DashboardPage() {
         <div className="dashboard-section-head">
           <div>
             <h3>Your desks</h3>
-            <p className="hint">Open a desk to manage what it covers and how it writes.</p>
+            <p className="hint">
+              Each desk is a beat — what to cover on an Edition topic. Pipeline prompts are configured inside the desk.
+            </p>
           </div>
           {desks.length > 0 && (
             <Link to="/flows/new" className="secondary">
@@ -267,7 +278,8 @@ export default function DashboardPage() {
             ))}
             <Link to="/flows/new" className="desk-tile desk-tile-create desk-tile-dashboard">
               <span className="desk-tile-label">Create desk</span>
-              <span className="desk-tile-role">From template or blank</span>
+              <span className="desk-tile-role">New beat</span>
+              <span className="desk-tile-meta">Start from Sports, Business, Tech, or AI News</span>
             </Link>
           </div>
         )}
@@ -296,7 +308,13 @@ export default function DashboardPage() {
         {isWriting ? (
           <div className="active-run-stack">
             {activeRuns.map((run) => (
-              <ActiveRunCard key={run.run_id} run={run} busyRunId={stopRunId} onStop={stopRun} />
+              <ActiveRunCard
+                key={run.run_id}
+                run={run}
+                busyRunId={stopRunId}
+                deskLabel={run.flow_path ? deskLabelByPath.get(run.flow_path) : undefined}
+                onStop={stopRun}
+              />
             ))}
           </div>
         ) : (

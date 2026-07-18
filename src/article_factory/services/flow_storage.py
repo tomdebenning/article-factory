@@ -234,6 +234,7 @@ def _flow_catalog_entry(child: dict[str, Any]) -> dict[str, Any] | None:
         steps = raw.get("steps")
         step_count = len(steps) if isinstance(steps, list) else 0
         beat_brief = str(raw.get("beat_brief") or "").strip()
+        edition_topic_slug = str(raw.get("edition_topic_slug") or "").strip()
         entry = {
             "path": path,
             "display_name": display_name,
@@ -243,6 +244,8 @@ def _flow_catalog_entry(child: dict[str, Any]) -> dict[str, Any] | None:
         }
         if beat_brief:
             entry["beat_brief"] = beat_brief
+        if edition_topic_slug:
+            entry["edition_topic_slug"] = edition_topic_slug
         return entry
     except (FileNotFoundError, ValueError, json.JSONDecodeError, OSError):
         return {
@@ -306,15 +309,20 @@ def save_step_response_to_disk(*, run_id: str, step_order: int, step_key: str, c
 def ensure_default_flows() -> str:
     sports_dir = flows_root() / "sports"
     sports_dir.mkdir(parents=True, exist_ok=True)
-    rel = "sports/standard-4-step.flow.json"
-    target = flows_root() / rel
-    if not target.exists():
+    primary = "sports/sports.flow.json"
+    primary_target = flows_root() / primary
+    if not primary_target.exists():
+        from article_factory.services.flow_defaults import build_sports_desk_flow
+
+        write_flow(primary, build_sports_desk_flow())
+    legacy = "sports/standard-4-step.flow.json"
+    legacy_target = flows_root() / legacy
+    if not legacy_target.exists():
         from article_factory.services.flow_defaults import build_standard_sports_flow
 
-        flow = build_standard_sports_flow()
-        write_flow(rel, flow)
+        write_flow(legacy, build_standard_sports_flow())
     ensure_default_templates()
-    return rel
+    return primary
 
 
 def ensure_default_templates() -> None:

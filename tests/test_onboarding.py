@@ -30,7 +30,7 @@ def test_onboarding_wizard_steps(configured_db) -> None:
         assert payload["completed"] is False
         assert [step["id"] for step in payload["steps"]] == ["settings", "desk", "plan", "activate"]
         assert payload["steps"][0]["ok"] is False
-        assert payload["steps"][1]["ok"] is False
+        assert payload["steps"][1]["ok"] is True
     finally:
         db.close()
 

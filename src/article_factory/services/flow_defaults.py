@@ -153,7 +153,7 @@ def build_sports_desk_flow() -> FlowDefinition:
         display_name="Sports",
         beat_brief="Games, athletes, leagues, and the stories fans care about.",
         journalist_prompt="You are a sports journalist. Write clear, engaging articles for a general audience.",
-    )
+    ).model_copy(update={"edition_topic_slug": "sports"})
 
 
 def build_business_news_desk_flow() -> FlowDefinition:
@@ -165,7 +165,7 @@ def build_business_news_desk_flow() -> FlowDefinition:
             "You are a business journalist. Write clear, well-sourced articles about companies, "
             "markets, and the economy for a general audience."
         ),
-    )
+    ).model_copy(update={"edition_topic_slug": "business-news"})
 
 
 def build_tech_news_desk_flow() -> FlowDefinition:
@@ -176,7 +176,7 @@ def build_tech_news_desk_flow() -> FlowDefinition:
         journalist_prompt=(
             "You are a technology journalist. Explain technical topics clearly for a smart general audience."
         ),
-    )
+    ).model_copy(update={"edition_topic_slug": "tech-news"})
 
 
 def build_ai_news_desk_flow() -> FlowDefinition:
@@ -187,4 +187,4 @@ def build_ai_news_desk_flow() -> FlowDefinition:
         journalist_prompt=(
             "You are an AI beat journalist. Cover models, tools, regulation, and industry impact with clarity and nuance."
         ),
-    )
+    ).model_copy(update={"edition_topic_slug": "ai-news"})

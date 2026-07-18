@@ -848,7 +848,7 @@ export type FlowTreeNode = {
   children?: FlowTreeNode[];
 };
 
-export const DEFAULT_FLOW_PATH = "sports/standard-4-step.flow.json";
+export const DEFAULT_FLOW_PATH = "sports/sports.flow.json";
 
 function submitTelemetryExportForm(path: string, flowVersionId: number): void {
   const form = document.createElement("form");

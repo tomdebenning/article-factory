@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-DEFAULT_FLOW_PATH = "sports/standard-4-step.flow.json"
+DEFAULT_FLOW_PATH = "sports/sports.flow.json"
 
 
 def resolve_default_flow_path(db: Session) -> str:
